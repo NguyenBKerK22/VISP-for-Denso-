@@ -1,0 +1,14 @@
+{
+  "ignored_headers": [
+    "vpWin32Renderer.h",
+    "vpWin32Window.h",
+    "vpWin32API.h",
+    "vpGDIRenderer.h"
+  ],
+  "ignored_classes": [
+    "vpPclViewer"
+  ],
+  "user_defined_headers": [],
+  "classes": {},
+  "enums": {}
+}

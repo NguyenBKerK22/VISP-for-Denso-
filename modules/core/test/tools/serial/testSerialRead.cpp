@@ -1,0 +1,93 @@
+/*
+ * ViSP, open source Visual Servoing Platform software.
+ * Copyright (C) 2005 - 2024 by Inria. All rights reserved.
+ *
+ * This software is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ * See the file LICENSE.txt at the root directory of this source
+ * distribution for additional information about the GNU GPL.
+ *
+ * For using ViSP with software that can not be combined with the GNU
+ * GPL, please contact Inria about acquiring a ViSP Professional
+ * Edition License.
+ *
+ * See https://visp.inria.fr for more information.
+ *
+ * This software was developed at:
+ * Inria Rennes - Bretagne Atlantique
+ * Campus Universitaire de Beaulieu
+ * 35042 Rennes Cedex
+ * France
+ *
+ * If you have questions regarding the use of this file, please contact
+ * Inria at visp@inria.fr
+ *
+ * This file is provided AS IS with NO WARRANTY OF ANY KIND, INCLUDING THE
+ * WARRANTY OF DESIGN, MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+ *
+ * Description:
+ * Test serial port communication.
+ */
+
+/*!
+  \example testSerialRead.cpp
+  \brief Test that reads data on serial port.
+*/
+
+#include <iostream>
+#include <stdlib.h>
+#include <visp3/core/vpTime.h>
+
+#include <visp3/core/vpSerial.h>
+
+int main(int argc, char **argv)
+{
+#ifdef ENABLE_VISP_NAMESPACE
+  using namespace VISP_NAMESPACE_NAME;
+#endif
+#if !defined(_WIN32)
+  std::string port;
+
+  unsigned long baud = 9600;
+  for (int i = 1; i < argc; i++) {
+    if (std::string(argv[i]) == "--port" && i + 1 < argc) {
+      port = std::string(argv[++i]);
+    }
+    else if (std::string(argv[i]) == "--baud" && i + 1 < argc) {
+      baud = (unsigned long)atol(argv[++i]);
+    }
+    else if (std::string(argv[i]) == "--help" || std::string(argv[i]) == "-h") {
+      std::cout << "\nUsage: " << argv[0]
+        << " [--port <serial name>]"
+        << " [--baud <baud rate>]"
+        << " [--help,-h]\n" << std::endl;
+      return EXIT_SUCCESS;
+    }
+  }
+
+  if (port.empty()) {
+    std::cout << "\nSerial port not specified." << std::endl;
+    std::cout << "\nUsage: " << argv[0] << " [--port <serial name>] [--baud <baud rate>] [--help]\n" << std::endl;
+    return EXIT_SUCCESS;
+  }
+
+  std::cout << "Try to connect to port \"" << port << "\" with baud rate " << baud << std::endl;
+  vpSerial serial(port, baud);
+
+  double t = vpTime::measureTimeSecond();
+  do {
+    std::string line = serial.readline("\n");
+    if (!line.empty()) {
+      std::cout << "Read line: " << line << std::endl;
+    }
+    vpTime::wait(100);
+  } while (vpTime::measureTimeSecond() - t < 30);
+#else
+  (void)argc;
+  (void)argv;
+  std::cout << "Serial test is only working on unix-like OS." << std::endl;
+#endif
+  return EXIT_SUCCESS;
+}

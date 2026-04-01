@@ -1,0 +1,372 @@
+//! \example tutorial-hsv-range-tuner.cpp
+
+#include <iostream>
+
+#include <visp3/core/vpConfig.h>
+
+#if defined(HAVE_OPENCV_HIGHGUI) && defined(VISP_HAVE_DISPLAY)
+#include <vector>
+
+#include <opencv2/highgui/highgui.hpp>
+
+#include <visp3/core/vpArray2D.h>
+#include <visp3/core/vpHSV.h>
+#include <visp3/core/vpImageConvert.h>
+#include <visp3/core/vpImageTools.h>
+#include <visp3/core/vpIoTools.h>
+#include <visp3/gui/vpDisplayFactory.h>
+#include <visp3/io/vpImageIo.h>
+#include <visp3/sensor/vpRealSense2.h>
+
+VP_ATTRIBUTE_NO_DESTROY std::vector<int> hsv_values_trackbar(6);
+VP_ATTRIBUTE_NO_DESTROY const cv::String window_detection_name = "Object Detection";
+
+void set_trackbar_H_min(int val)
+{
+  cv::setTrackbarPos("Low H", window_detection_name, val);
+}
+void set_trackbar_H_max(int val)
+{
+  cv::setTrackbarPos("High H", window_detection_name, val);
+}
+void set_trackbar_S_min(int val)
+{
+  cv::setTrackbarPos("Low S", window_detection_name, val);
+}
+void set_trackbar_S_max(int val)
+{
+  cv::setTrackbarPos("High S", window_detection_name, val);
+}
+void set_trackbar_V_min(int val)
+{
+  cv::setTrackbarPos("Low V", window_detection_name, val);
+}
+void set_trackbar_V_max(int val)
+{
+  cv::setTrackbarPos("High V", window_detection_name, val);
+}
+static void on_low_H_thresh_trackbar(int, void *)
+{
+  hsv_values_trackbar[0] = std::min(hsv_values_trackbar[1]-1, hsv_values_trackbar[0]);
+  set_trackbar_H_min(hsv_values_trackbar[0]);
+}
+static void on_high_H_thresh_trackbar(int, void *)
+{
+  hsv_values_trackbar[1] = std::max(hsv_values_trackbar[1], hsv_values_trackbar[0]+1);
+  set_trackbar_H_max(hsv_values_trackbar[1]);
+}
+static void on_low_S_thresh_trackbar(int, void *)
+{
+  hsv_values_trackbar[2] = std::min(hsv_values_trackbar[3]-1, hsv_values_trackbar[2]);
+  set_trackbar_S_min(hsv_values_trackbar[2]);
+}
+static void on_high_S_thresh_trackbar(int, void *)
+{
+  hsv_values_trackbar[3] = std::max(hsv_values_trackbar[3], hsv_values_trackbar[2]+1);
+  set_trackbar_S_max(hsv_values_trackbar[3]);
+}
+static void on_low_V_thresh_trackbar(int, void *)
+{
+  hsv_values_trackbar[4] = std::min(hsv_values_trackbar[5]-1, hsv_values_trackbar[4]);
+  set_trackbar_V_min(hsv_values_trackbar[4]);
+}
+static void on_high_V_thresh_trackbar(int, void *)
+{
+  hsv_values_trackbar[5] = std::max(hsv_values_trackbar[5], hsv_values_trackbar[4]+1);
+  set_trackbar_V_max(hsv_values_trackbar[5]);
+}
+
+int main(int argc, const char *argv[])
+{
+#ifdef ENABLE_VISP_NAMESPACE
+  using namespace VISP_NAMESPACE_NAME;
+#endif
+
+  bool opt_save_img = false;
+  std::string opt_hsv_filename = "calib/hsv-thresholds.yml";
+  std::string opt_img_filename;
+  bool show_helper = false;
+  for (int i = 1; i < argc; i++) {
+    if ((std::string(argv[i]) == "--hsv-thresholds") && ((i+1) < argc)) {
+      opt_hsv_filename = std::string(argv[++i]);
+    }
+    else if ((std::string(argv[i]) == "--image") && ((i+1) < argc)) {
+      opt_img_filename = std::string(argv[++i]);
+    }
+    else if (std::string(argv[i]) == "--save-img") {
+      opt_save_img = true;
+    }
+    if (show_helper || std::string(argv[i]) == "--help" || std::string(argv[i]) == "-h") {
+      std::cout << "\nSYNOPSIS " << std::endl
+        << argv[0]
+        << " [--image <input image>]"
+        << " [--hsv-thresholds <output filename.yml>]"
+        << " [--save-img]"
+        << " [--help,-h]"
+        << std::endl;
+      std::cout << "\nOPTIONS " << std::endl
+        << "  --image <input image>" << std::endl
+        << "    Name of the input image filename." << std::endl
+        << "    When this option is not set, we use librealsense to stream images from a Realsense camera. " << std::endl
+        << "    Example: --image ballons.jpg" << std::endl
+        << std::endl
+        << "  --hsv-thresholds <output filename.yml>" << std::endl
+        << "    Name of the output filename with yaml extension that will contain HSV low/high thresholds." << std::endl
+        << "    Default: " << opt_hsv_filename << std::endl
+        << std::endl
+        << "  --save-img" << std::endl
+        << "    Enable RGB, HSV and segmented image saving" << std::endl
+        << std::endl
+        << "  --help, -h" << std::endl
+        << "    Display this helper message." << std::endl
+        << std::endl;
+      return EXIT_SUCCESS;
+    }
+  }
+
+  bool use_realsense = false;
+#if defined(VISP_HAVE_REALSENSE2)
+  use_realsense = true;
+#endif
+  if (use_realsense) {
+    if (!opt_img_filename.empty()) {
+      use_realsense = false;
+    }
+  }
+  else if (opt_img_filename.empty()) {
+    std::cout << "Error: you should use --image <input image> option to specify an input image..." << std::endl;
+    return EXIT_FAILURE;
+  }
+
+  if (use_realsense) {
+    std::cout << "Use images from Realsense camera" << std::endl;
+  }
+
+  int max_value_H = 255;
+  int max_value = 255;
+
+  hsv_values_trackbar[0] = 0;           // Low H
+  hsv_values_trackbar[1] = max_value_H; // High H
+  hsv_values_trackbar[2] = 0;           // Low S
+  hsv_values_trackbar[3] = max_value;   // High S
+  hsv_values_trackbar[4] = 0;           // Low V
+  hsv_values_trackbar[5] = max_value;   // High V
+
+  vpImage<vpRGBa> I;
+  int width, height;
+
+#if defined(VISP_HAVE_REALSENSE2)
+  vpRealSense2 rs;
+#endif
+
+  if (use_realsense) {
+#if defined(VISP_HAVE_REALSENSE2)
+    width = 848; height = 480;
+    int fps = 60;
+    rs2::config config;
+    config.enable_stream(RS2_STREAM_COLOR, width, height, RS2_FORMAT_RGBA8, fps);
+    config.disable_stream(RS2_STREAM_DEPTH);
+    config.disable_stream(RS2_STREAM_INFRARED, 1);
+    config.disable_stream(RS2_STREAM_INFRARED, 2);
+    rs.open(config);
+    rs.acquire(I);
+#endif
+  }
+  else {
+    try {
+      vpImageIo::read(I, opt_img_filename);
+    }
+    catch (const vpException &e) {
+      std::cout << e.getStringMessage() << std::endl;
+      return EXIT_FAILURE;
+    }
+    width = I.getWidth();
+    height = I.getHeight();
+  }
+
+  cv::namedWindow(window_detection_name);
+
+  vpArray2D<int> hsv_values(hsv_values_trackbar, static_cast<unsigned int>(hsv_values_trackbar.size()), 1);
+  vpArray2D<int> hsv_values_prev;
+  if (vpArray2D<int>::loadYAML(opt_hsv_filename, hsv_values)) {
+    std::cout << "Load hsv values from " << opt_hsv_filename << " previous tuning " << std::endl;
+    std::cout << hsv_values.t() << std::endl;
+    hsv_values_prev = hsv_values;
+    for (size_t i = 0; i < hsv_values.size(); ++i) {
+      hsv_values_trackbar[i] = hsv_values.data[i];
+    }
+  }
+
+  // Trackbars to set thresholds for HSV values
+  cv::createTrackbar("Low H", window_detection_name, &hsv_values_trackbar[0], max_value_H, on_low_H_thresh_trackbar);
+  cv::createTrackbar("High H", window_detection_name, &hsv_values_trackbar[1], max_value_H, on_high_H_thresh_trackbar);
+  cv::createTrackbar("Low S", window_detection_name, &hsv_values_trackbar[2], max_value, on_low_S_thresh_trackbar);
+  cv::createTrackbar("High S", window_detection_name, &hsv_values_trackbar[3], max_value, on_high_S_thresh_trackbar);
+  cv::createTrackbar("Low V", window_detection_name, &hsv_values_trackbar[4], max_value, on_low_V_thresh_trackbar);
+  cv::createTrackbar("High V", window_detection_name, &hsv_values_trackbar[5], max_value, on_high_V_thresh_trackbar);
+
+  vpImage<unsigned char> mask(height, width);
+  vpImage<vpRGBa> I_segmented(height, width);
+
+#if (VISP_CXX_STANDARD >= VISP_CXX_STANDARD_11)
+  vpImage<vpHSV<unsigned char, true>> Ihsv;
+  std::shared_ptr<vpDisplay> d_I = vpDisplayFactory::createDisplay(I, 0, 0, "Current frame");
+  std::shared_ptr<vpDisplay> d_I_segmented = vpDisplayFactory::createDisplay(I_segmented, I.getWidth()+75, 0, "Segmented frame");
+#else
+  vpImage<unsigned char> H(height, width);
+  vpImage<unsigned char> S(height, width);
+  vpImage<unsigned char> V(height, width);
+  vpDisplay *d_I = vpDisplayFactory::allocateDisplay(I, 0, 0, "Current frame");
+  vpDisplay *d_I_segmented = vpDisplayFactory::allocateDisplay(I_segmented, I.getWidth()+75, 0, "Segmented frame");
+#endif
+  bool quit = false;
+
+  while (!quit) {
+    if (use_realsense) {
+#if defined(VISP_HAVE_REALSENSE2)
+      rs.acquire(I);
+#endif
+    }
+    else {
+      vpImageIo::read(I, opt_img_filename);
+    }
+
+#if (VISP_CXX_STANDARD >= VISP_CXX_STANDARD_11)
+    vpImageConvert::convert(I, Ihsv);
+    vpImageTools::inRange(Ihsv, hsv_values_trackbar, mask);
+#else
+    vpImageConvert::RGBaToHSV(reinterpret_cast<unsigned char *>(I.bitmap),
+                              reinterpret_cast<unsigned char *>(H.bitmap),
+                              reinterpret_cast<unsigned char *>(S.bitmap),
+                              reinterpret_cast<unsigned char *>(V.bitmap), I.getSize());
+
+    vpImageTools::inRange(reinterpret_cast<unsigned char *>(H.bitmap),
+                                                reinterpret_cast<unsigned char *>(S.bitmap),
+                                                reinterpret_cast<unsigned char *>(V.bitmap),
+                                                hsv_values_trackbar,
+                                                reinterpret_cast<unsigned char *>(mask.bitmap),
+                                                mask.getSize());
+#endif
+
+    vpImageTools::inMask(I, mask, I_segmented);
+
+    vpDisplay::display(I);
+    vpDisplay::display(I_segmented);
+    vpDisplay::displayText(I, 20, 20, "Left click to learn HSV value...", vpColor::red);
+    vpDisplay::displayText(I, 40, 20, "Middle click to get HSV value...", vpColor::red);
+    vpDisplay::displayText(I, 60, 20, "Right click to quit...", vpColor::red);
+    vpImagePoint ip;
+    vpMouseButton::vpMouseButtonType button;
+    if (vpDisplay::getClick(I, ip, button, false)) {
+      if (button == vpMouseButton::button3) {
+        quit = true;
+      }
+      else if (button == vpMouseButton::button2) {
+        unsigned int i = static_cast<unsigned int>(ip.get_i());
+        unsigned int j = static_cast<unsigned int>(ip.get_j());
+#if (VISP_CXX_STANDARD >= VISP_CXX_STANDARD_11)
+        int h = static_cast<int>(Ihsv[i][j].H);
+        int s = static_cast<int>(Ihsv[i][j].S);
+        int v = static_cast<int>(Ihsv[i][j].V);
+#else
+        int h = static_cast<int>(H[i][j]);
+        int s = static_cast<int>(S[i][j]);
+        int v = static_cast<int>(V[i][j]);
+#endif
+        std::cout << "RGB[" << i << "][" << j << "]: " << static_cast<int>(I[i][j].R) << " " << static_cast<int>(I[i][j].G)
+          << " " << static_cast<int>(I[i][j].B) << " -> HSV: " << h << " " << s << " " << v << std::endl;
+      }
+      else if (button == vpMouseButton::button1) {
+        unsigned int i = static_cast<unsigned int>(ip.get_i());
+        unsigned int j = static_cast<unsigned int>(ip.get_j());
+#if (VISP_CXX_STANDARD >= VISP_CXX_STANDARD_11)
+        int h = static_cast<int>(Ihsv[i][j].H);
+        int s = static_cast<int>(Ihsv[i][j].S);
+        int v = static_cast<int>(Ihsv[i][j].V);
+#else
+        int h = static_cast<int>(H[i][j]);
+        int s = static_cast<int>(S[i][j]);
+        int v = static_cast<int>(V[i][j]);
+#endif
+        int offset = 30;
+        hsv_values_trackbar[0] = std::max(0, h - offset);
+        hsv_values_trackbar[1] = std::min(max_value_H, h + offset);
+        hsv_values_trackbar[2] = std::max(0, s - offset);
+        hsv_values_trackbar[3] = std::min(max_value, s + offset);
+        hsv_values_trackbar[4] = std::max(0, v - offset);
+        hsv_values_trackbar[5] = std::min(max_value, v + offset);
+        std::cout << "HSV learned: " << h << " " << s << " " << v << std::endl;
+        set_trackbar_H_min(hsv_values_trackbar[0]);
+        set_trackbar_H_max(hsv_values_trackbar[1]);
+        set_trackbar_S_min(hsv_values_trackbar[2]);
+        set_trackbar_S_max(hsv_values_trackbar[3]);
+        set_trackbar_V_min(hsv_values_trackbar[4]);
+        set_trackbar_V_max(hsv_values_trackbar[5]);
+      }
+    }
+    if (quit) {
+      std::string parent = vpIoTools::getParent(opt_hsv_filename);
+      if (vpIoTools::checkDirectory(parent) == false) {
+        std::cout << "Create directory: " << parent << std::endl;
+        vpIoTools::makeDirectory(parent);
+      }
+
+      vpArray2D<int> hsv_values_new(hsv_values_trackbar, static_cast<unsigned int>(hsv_values_trackbar.size()), 1);
+      if (hsv_values_new != hsv_values_prev) {
+        if (vpIoTools::checkFilename(opt_hsv_filename)) {
+          std::string hsv_filename_backup(opt_hsv_filename + std::string(".previous"));
+          std::cout << "Create a backup of the previous calibration in " << hsv_filename_backup << std::endl;
+          vpIoTools::copy(opt_hsv_filename, hsv_filename_backup);
+        }
+
+        std::cout << "Save new calibration in: " << opt_hsv_filename << std::endl;
+        std::string header = std::string("# File created ") + vpTime::getDateTime();
+        vpArray2D<int>::saveYAML(opt_hsv_filename, hsv_values_new, header.c_str());
+      }
+      if (opt_save_img) {
+        std::string path_img(parent + "/images-visp");
+        if (vpIoTools::checkDirectory(path_img) == false) {
+          std::cout << "Create directory: " << path_img << std::endl;
+          vpIoTools::makeDirectory(path_img);
+        }
+
+        std::cout << "Save images in path_img folder..." << std::endl;
+        vpImageIo::write(I, path_img + "/I.png");
+        vpImageIo::write(I_segmented, path_img + "/I-HSV-segmented.png");
+#if (VISP_CXX_STANDARD < VISP_CXX_STANDARD_11)
+        vpImage<vpRGBa> I_HSV;
+        vpImageConvert::merge(&H, &S, &V, nullptr, I_HSV);
+        vpImageIo::write(I_HSV, path_img + "/I-HSV.png");
+#endif
+      }
+      break;
+    }
+    vpDisplay::flush(I);
+    vpDisplay::flush(I_segmented);
+    cv::waitKey(10); // To display trackbar
+  }
+#if (VISP_CXX_STANDARD < VISP_CXX_STANDARD_11)
+  if (d_I != nullptr) {
+    delete d_I;
+  }
+
+  if (d_I_segmented != nullptr) {
+    delete d_I_segmented;
+  }
+#endif
+  return EXIT_SUCCESS;
+}
+
+#else
+int main()
+{
+#if !defined(HAVE_OPENCV_HIGHGUI)
+  std::cout << "This tutorial needs OpenCV highgui module as 3rd party." << std::endl;
+#endif
+#if !defined(VISP_HAVE_X11)
+  std::cout << "This tutorial needs X11 3rd party enabled." << std::endl;
+#endif
+  std::cout << "Install missing 3rd parties, configure and rebuild ViSP." << std::endl;
+  return EXIT_SUCCESS;
+}
+#endif
