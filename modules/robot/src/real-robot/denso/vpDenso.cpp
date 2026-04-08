@@ -62,7 +62,7 @@ vpDenso::vpDenso()
   // Denavit-Hartenberg parameters
   a1 = 0.075;
   a2 = 0.365;
-  a3 = 0.090;
+  a3 = -0.090;
   d1 = 0.335;
   d4 = 0.405;
   d6 = 0.080;
@@ -179,10 +179,59 @@ bool vpDenso::convertJointPositionInLimits(unsigned int joint, const double &q, 
   }
 
   if (verbose) {
-    std::cout << "Joint " << joint << " not in limits: " << this->joint_min[joint] << " < " << q << " < "
-      << this->joint_max[joint] << std::endl;
+    // std::cout << "Joint " << joint << " not in limits: " << this->joint_min[joint] << " < " << q << " < "
+    //   << this->joint_max[joint] << std::endl;
   }
 
+  return false;
+}
+
+bool vpDenso::convertJointPositionInLimitsNews(double *q) const
+{
+  double eps = 0.01;
+  double q_temp = 0;
+  for (int i = 0; i < 6; i++) {
+    q_temp = q[i];
+    // switch (i) {
+    // case 0:
+    //   q_temp = q[i];
+    //   break;
+    // case 1:
+    //   q_temp = -q[i] + M_PI / 2;
+    //   break;
+    // case 2:
+    //   q_temp = -q[i] - M_PI / 2;
+    //   break;
+    // case 3:
+    //   q_temp = q[i];
+    //   break;
+    // case 4:
+    //   q_temp = -q[i];
+    //   break;
+    // case 5:
+    //   q_temp = q[i];
+    //   break;
+    // default:
+    //   break;
+    // }
+    if (q_temp >= joint_min[i] - eps && q_temp <= joint_max[i] + eps) {
+      q[i] = q_temp;
+      return true;
+    }
+
+    q_temp = q_temp + 2 * M_PI;
+    if (q_temp >= joint_min[i] - eps && q_temp <= joint_max[i] + eps) {
+      q[i] = q_temp;
+      return true;
+    }
+
+    q_temp = q_temp - 2 * M_PI;
+    if (q_temp >= joint_min[i] - eps && q_temp <= joint_max[i] + eps) {
+      q[i] = q_temp;
+      return true;
+    }
+
+  }
   return false;
 }
 
@@ -270,7 +319,15 @@ unsigned int vpDenso::getInverseKinematicsWrist(const vpHomogeneousMatrix &fMw, 
   double px = fMw[0][3]; // a*c1
   double py = fMw[1][3]; // a*s1
   double pz = fMw[2][3];
-
+  double ax = fMw[0][2];
+  double ay = fMw[1][2];
+  double az = fMw[2][2];
+  double ox = fMw[0][1];
+  double oy = fMw[1][1];
+  double oz = fMw[2][1];
+  double nx = fMw[0][0];
+  double ny = fMw[1][0];
+  double nz = fMw[2][0];
   // Compute q1
   double a_2 = px * px + py * py;
   // if (a_2 == 0) {// singularity
@@ -291,203 +348,92 @@ unsigned int vpDenso::getInverseKinematicsWrist(const vpHomogeneousMatrix &fMw, 
   double q1_mod;
   for (unsigned int i = 0; i < 8; i += 4) {
     q_sol[i][0] = atan2(s1[i], c1[i]);
-    if (convertJointPositionInLimits(0, q_sol[i][0], q1_mod, verbose) == true) {
-      q_sol[i][0] = q1_mod;
-      for (unsigned int j = 1; j < 4; j++) {
-        c1[i + j] = c1[i];
-        s1[i + j] = s1[i];
-        q_sol[i + j][0] = q_sol[i][0];
-      }
-    }
-    else {
-      for (unsigned int j = 1; j < 4; j++)
-        ok[i + j] = false;
+    for (unsigned int j = 0; j < 4; j++) {
+      c1[i + j] = c1[i];
+      s1[i + j] = s1[i];
+      q_sol[i + j][0] = q_sol[i][0];
     }
   }
 
-  // Compute q3
-  double K, q3_mod;
+  double q3_mod, A, B, X, Y, Z;
   for (unsigned int i = 0; i < 8; i += 4) {
     if (ok[i] == true) {
-      K = (px * px + py * py + pz * pz + a1 * a1 - a2 * a2 - a3 * a3 + d1 * d1 - d4 * d4 -
-           2 * (a1 * c1[i] * px + a1 * s1[i] * py + d1 * pz)) /
-        (2 * a2);
-      double d4_a3_K = d4 * d4 + a3 * a3 - K * K;
-
-      q_sol[i][2] = atan2(a3, d4) + atan2(K, sqrt(d4_a3_K));
-      q_sol[i + 2][2] = atan2(a3, d4) + atan2(K, -sqrt(d4_a3_K));
-
+      A = c1[i] * (px - ax * d6)  + s1[i] * (py - ay * d6) - a1;
+      B = pz - az * d6 - d1;
+      X = 2 * a2 * a3;
+      Y = 2 * a2 * d4;
+      Z = A * A + B * B - a2 * a2 - a3 * a3 - d4 * d4;
+      double phi = atan2(Y, X);
+      double R = X / cos(phi);
+      for (unsigned int j = 0; j < 2; j++) {
+        q_sol[i + j][2] = acos(Z / R) - phi;
+        q_sol[i + j + 2][2] = -acos(Z / R) - phi;
+      }
       for (unsigned int j = 0; j < 4; j += 2) {
-        if (d4_a3_K < 0) {
-          for (unsigned int k = 0; k < 2; k++)
-            ok[i + j + k] = false;
-        }
-        else {
-          if (convertJointPositionInLimits(2, q_sol[i + j][2], q3_mod, verbose) == true) {
-            for (unsigned int k = 0; k < 2; k++) {
-              q_sol[i + j + k][2] = q3_mod;
-              c3[i + j + k] = cos(q3_mod);
-              s3[i + j + k] = sin(q3_mod);
-            }
-          }
-          else {
-            for (unsigned int k = 0; k < 2; k++)
-              ok[i + j + k] = false;
-          }
+        for (unsigned int k = 0; k < 2; k++) {
+          q_sol[i + j + k][2] = q_sol[i + j][2];
+          c3[i + j + k] = cos(q_sol[i + j][2]);
+          s3[i + j + k] = sin(q_sol[i + j][2]);
         }
       }
     }
   }
-  //   std::cout << "ok apres q3: ";
-  //   for (unsigned int i=0; i< 8; i++)
-  //     std::cout << ok[i] << " ";
-  //   std::cout << std::endl;
 
   // Compute q2
   double q23[8], q2_mod;
-  for (unsigned int i = 0; i < 8; i += 2) {
+  double K1, K2, D, S;
+  for (unsigned int i = 0; i < 8; i += 4) {
     if (ok[i] == true) {
-      // Compute q23 = q2+q3
-      c23[i] = (-(a3 - a2 * c3[i]) * (c1[i] * px + s1[i] * py - a1) - (d1 - pz) * (d4 + a2 * s3[i])) /
-        ((c1[i] * px + s1[i] * py - a1) * (c1[i] * px + s1[i] * py - a1) + (d1 - pz) * (d1 - pz));
-      s23[i] = ((d4 + a2 * s3[i]) * (c1[i] * px + s1[i] * py - a1) - (d1 - pz) * (a3 - a2 * c3[i])) /
-        ((c1[i] * px + s1[i] * py - a1) * (c1[i] * px + s1[i] * py - a1) + (d1 - pz) * (d1 - pz));
-      q23[i] = atan2(s23[i], c23[i]);
-      // std::cout << i << " c23 = " << c23[i] << " s23 = " << s23[i] <<
-      // std::endl;
-      // q2 = q23 - q3
-      q_sol[i][1] = q23[i] - q_sol[i][2];
+      K1 = c1[i] * (px - ax * d6) + s1[i] * (py - ay * d6) - a1;
+      K2 = d1 - pz + az * d6;
+      D = a3 * c3[i] - d4 * s3[i] + a2;
+      S = sqrt(K1 * K1 + K2 * K2);
+      double alpha = atan2(-K2, K1);
+      double q2_1 = alpha - acos(D / S);
+      double q2_2 = alpha + acos(D / S);
 
-      if (convertJointPositionInLimits(1, q_sol[i][1], q2_mod, verbose) == true) {
-        for (unsigned int j = 0; j < 2; j++) {
-          q_sol[i + j][1] = q2_mod;
-          c23[i + j] = c23[i];
-          s23[i + j] = s23[i];
-        }
-      }
-      else {
-        for (unsigned int j = 0; j < 2; j++)
-          ok[i + j] = false;
-      }
-    }
-  }
-  //   std::cout << "ok apres q2: ";
-  //   for (unsigned int i=0; i< 8; i++)
-  //     std::cout << ok[i] << " ";
-  //   std::cout << std::endl;
+      // q3(+) đi với q2_1
+      q_sol[i][1] = q2_1;
+      q_sol[i + 1][1] = q2_1;
 
-  // Compute q4 as long as s5 != 0
-  double r13 = fMw[0][2];
-  double r23 = fMw[1][2];
-  double r33 = fMw[2][2];
-  double s4s5, c4s5, q4_mod, q5_mod;
-  for (unsigned int i = 0; i < 8; i += 2) {
-    if (ok[i] == true) {
-      s4s5 = -s1[i] * r13 + c1[i] * r23;
-      c4s5 = c1[i] * c23[i] * r13 + s1[i] * c23[i] * r23 - s23[i] * r33;
-      if (fabs(s4s5) < vpMath::rad(0.5) && fabs(c4s5) < vpMath::rad(0.5)) {
-        // s5 = 0
-        c5[i] = c1[i] * s23[i] * r13 + s1[i] * s23[i] * r23 + c23[i] * r33;
-        // std::cout << "Singularity: s5 near 0: ";
-        if (c5[i] > 0.)
-          q_sol[i][4] = 0.0;
-        else
-          q_sol[i][4] = M_PI;
-
-        if (convertJointPositionInLimits(4, q_sol[i][4], q5_mod, verbose) == true) {
-          for (unsigned int j = 0; j < 2; j++) {
-            q_sol[i + j][3] = q[3]; // keep current q4
-            q_sol[i + j][4] = q5_mod;
-            c4[i] = cos(q_sol[i + j][3]);
-            s4[i] = sin(q_sol[i + j][3]);
-          }
-        }
-        else {
-          for (unsigned int j = 0; j < 2; j++)
-            ok[i + j] = false;
-        }
-      }
-      else {
-// s5 != 0
-#if 0 // Modified 2016/03/10 since if and else are the same
-      // if (c4s5 == 0) {
-        if (std::fabs(c4s5) <= std::numeric_limits<double>::epsilon()) {
-          // c4 = 0
-          //  vpTRACE("c4 = 0");
-          // q_sol[i][3] = q[3]; // keep current position
-          q_sol[i][3] = atan2(s4s5, c4s5);
-        }
-        else {
-          q_sol[i][3] = atan2(s4s5, c4s5);
-        }
-#else
-        q_sol[i][3] = atan2(s4s5, c4s5);
-#endif
-        if (convertJointPositionInLimits(3, q_sol[i][3], q4_mod, verbose) == true) {
-          q_sol[i][3] = q4_mod;
-          c4[i] = cos(q4_mod);
-          s4[i] = sin(q4_mod);
-        }
-        else {
-          ok[i] = false;
-        }
-        if (q_sol[i][3] > 0.)
-          q_sol[i + 1][3] = q_sol[i][3] + M_PI;
-        else
-          q_sol[i + 1][3] = q_sol[i][3] - M_PI;
-        if (convertJointPositionInLimits(3, q_sol[i + 1][3], q4_mod, verbose) == true) {
-          q_sol[i + 1][3] = q4_mod;
-          c4[i + 1] = cos(q4_mod);
-          s4[i + 1] = sin(q4_mod);
-        }
-        else {
-          ok[i + 1] = false;
-        }
-
-        // Compute q5
-        for (unsigned int j = 0; j < 2; j++) {
-          if (ok[i + j] == true) {
-            c5[i + j] = c1[i + j] * s23[i + j] * r13 + s1[i + j] * s23[i + j] * r23 + c23[i + j] * r33;
-            s5[i + j] = (c1[i + j] * c23[i + j] * c4[i + j] - s1[i + j] * s4[i + j]) * r13 +
-              (s1[i + j] * c23[i + j] * c4[i + j] + c1[i + j] * s4[i + j]) * r23 -
-              s23[i + j] * c4[i + j] * r33;
-
-            q_sol[i + j][4] = atan2(s5[i + j], c5[i + j]);
-            if (convertJointPositionInLimits(4, q_sol[i + j][4], q5_mod, verbose) == true) {
-              q_sol[i + j][4] = q5_mod;
-            }
-            else {
-
-              ok[i + j] = false;
-            }
-          }
-        }
+      // q3(-) đi với q2_2
+      q_sol[i + 2][1] = q2_2;
+      q_sol[i + 3][1] = q2_2;
+      for (unsigned int j = 0; j < 4; j += 2) {
+        q_sol[i + j][1] = q_sol[i + j][1];
+        c23[i + j] = cos(q_sol[i + j][1] + q_sol[i + j][2]);
+        s23[i + j] = sin(q_sol[i + j][1] + q_sol[i + j][2]);
+        std::cout << c23[i + j] << " " << s23[i + j] << std::endl;
       }
     }
   }
 
+  for (unsigned int i = 0; i < 8; i += 2) {
+    double C5 = az * c23[i] - ax * c1[i] * s23[i] - ay * s1[i] * s23[i];
+    q_sol[i][4] = acos(C5);
+    q_sol[i + 1][4] = -acos(C5);
+    for (int j = 0; j < 2; j++) {
+      q_sol[i + j][4] = q_sol[i + j][4];
+    }
+  }
+  // Compute q4
+  for (unsigned int i = 0; i < 8; i++) {
+    double frac_A = ay * c1[i] - ax * s1[i];
+    double frac_B = az * s23[i] + ax * c1[i] * c23[i] + ay * s1[i] * c23[i];
+    q_sol[i][3] = atan2(frac_A, frac_B);
+    if (abs(q_sol[i][3] + M_PI - q[3]) < abs(q_sol[i][3] - q[3])) q_sol[i][3] = q_sol[i][3] + M_PI;
+  }
   // Compute q6
   // 4 solutions for q6 and 4 more solutions by flipping the wrist (see below)
-  double r12 = fMw[0][1];
-  double r22 = fMw[1][1];
-  double r32 = fMw[2][1];
-  double q6_mod;
   for (unsigned int i = 0; i < 8; i++) {
-    c6[i] = -(c1[i] * c23[i] * s4[i] + s1[i] * c4[i]) * r12 + (c1[i] * c4[i] - s1[i] * c23[i] * s4[i]) * r22 +
-      s23[i] * s4[i] * r32;
-    s6[i] = -(c1[i] * c23[i] * c4[i] * c5[i] - c1[i] * s23[i] * s5[i] - s1[i] * s4[i] * c5[i]) * r12 -
-      (s1[i] * c23[i] * c4[i] * c5[i] - s1[i] * s23[i] * s5[i] + c1[i] * s4[i] * c5[i]) * r22 +
-      (c23[i] * s5[i] + s23[i] * c4[i] * c5[i]) * r32;
-
-    q_sol[i][5] = atan2(s6[i], c6[i]);
-    if (convertJointPositionInLimits(5, q_sol[i][5], q6_mod, verbose) == true) {
-      q_sol[i][5] = q6_mod;
-    }
-    else {
-      ok[i] = false;
-    }
+    double frac_A = -(oz * c23[i] - ox * s23[i]*c1[i] - oy * s23[i]*s1[i]);
+    double frac_B = nz * c23[i] - nx * s23[i]*c1[i] - ny * s23[i]*s1[i];
+    q_sol[i][5] = atan2(frac_A, frac_B);
+    if (abs(q_sol[i][5] + M_PI - q[5]) < abs(q_sol[i][5] - q[5])) q_sol[i][5] = q_sol[i][5] + M_PI;
   }
-
+  for (int i = 0; i < 8; i++) {
+    ok[i] = convertJointPositionInLimitsNews(q_sol[i].data);
+  }
   // Select the best config in terms of distance from the current position
   unsigned int nbsol = 0;
   unsigned int sol = 0;
@@ -521,9 +467,11 @@ unsigned int vpDenso::getInverseKinematicsWrist(const vpHomogeneousMatrix &fMw, 
   // std::cout << "dist: " << dist.t() << std::endl;
   if (nbsol) {
     for (unsigned int i = 0; i < 8; i++) {
-      if (ok[i] == true)
+      std::cout << q_sol[i].t() << " dist: " << dist[i] << " ok: " << ok[i] << std::endl;
+      if (ok[i] == true) {
         if (dist[i] < dist[sol])
           sol = i;
+      }
     }
     // Update the inverse kinematics solution
     q = q_sol[sol];
@@ -742,53 +690,100 @@ void vpDenso::get_fMc(const vpColVector &q, vpHomogeneousMatrix &fMc) const
   \endcode
 
 */
+// void vpDenso::get_fMe(const vpColVector &q, vpHomogeneousMatrix &fMe) const
+// {
+//   double q1 = q[0];
+//   double q2 = q[1];
+//   double q3 = q[2];
+//   double q4 = q[3];
+//   double q5 = q[4];
+//   double q6 = q[5];
+//   //  We turn off the coupling since the measured positions are joint position
+//   //  taking into account the coupling factor. The coupling factor is relevant
+//   //  if positions are motor position.
+//   // double q6 = q[5] + c56 * q[4];
+
+//   double c1 = cos(q1);
+//   double s1 = sin(q1);
+//   double c2 = cos(q2);
+//   double s2 = sin(q2);
+//   // double c3 = cos(q3);
+//   // double s3 = sin(q3);
+//   double c4 = cos(q4);
+//   double s4 = sin(q4);
+//   double c5 = cos(q5);
+//   double s5 = sin(q5);
+//   double c6 = cos(q6);
+//   double s6 = sin(q6);
+//   double c23 = cos(q2 + q3);
+//   double s23 = sin(q2 + q3);
+
+//   fMe[0][0] = c1 * (c23 * (c4 * c5 * c6 - s4 * s6) - s23 * s5 * c6) - s1 * (s4 * c5 * c6 + c4 * s6);
+//   fMe[1][0] = -s1 * (c23 * (-c4 * c5 * c6 + s4 * s6) + s23 * s5 * c6) + c1 * (s4 * c5 * c6 + c4 * s6);
+//   fMe[2][0] = s23 * (s4 * s6 - c4 * c5 * c6) - c23 * s5 * c6;
+
+//   fMe[0][1] = -c1 * (c23 * (c4 * c5 * s6 + s4 * c6) - s23 * s5 * s6) + s1 * (s4 * c5 * s6 - c4 * c6);
+//   fMe[1][1] = -s1 * (c23 * (c4 * c5 * s6 + s4 * c6) - s23 * s5 * s6) - c1 * (s4 * c5 * s6 - c4 * c6);
+//   fMe[2][1] = s23 * (c4 * c5 * s6 + s4 * c6) + c23 * s5 * s6;
+
+//   fMe[0][2] = c1 * (c23 * c4 * s5 + s23 * c5) - s1 * s4 * s5;
+//   fMe[1][2] = s1 * (c23 * c4 * s5 + s23 * c5) + c1 * s4 * s5;
+//   fMe[2][2] = -s23 * c4 * s5 + c23 * c5;
+
+//   fMe[0][3] = c1 * (c23 * (c4 * s5 * d6 - a3) + s23 * (c5 * d6 + d4) + a1 + a2 * c2) - s1 * s4 * s5 * d6;
+//   fMe[1][3] = s1 * (c23 * (c4 * s5 * d6 - a3) + s23 * (c5 * d6 + d4) + a1 + a2 * c2) + c1 * s4 * s5 * d6;
+//   fMe[2][3] = s23 * (a3 - c4 * s5 * d6) + c23 * (c5 * d6 + d4) - a2 * s2 + d1;
+
+//   // std::cout << "Effector position fMe: " << std::endl << fMe;
+
+//   return;
+// }
 void vpDenso::get_fMe(const vpColVector &q, vpHomogeneousMatrix &fMe) const
 {
+  // Joint variables
+  // double q1 = q[0];
+  // double q2 = -(q[1] - M_PI / 2); // We change the sign of q2 to have a more intuitive solution
+  // double q3 = -(q[2] + M_PI / 2); // We change the sign of q3 to have a more intuitive solution
+  // double q4 = q[3];
+  // double q5 = -q[4];
+  // double q6 = q[5];
   double q1 = q[0];
   double q2 = q[1];
   double q3 = q[2];
   double q4 = q[3];
   double q5 = q[4];
   double q6 = q[5];
-  //  We turn off the coupling since the measured positions are joint position
-  //  taking into account the coupling factor. The coupling factor is relevant
-  //  if positions are motor position.
-  // double q6 = q[5] + c56 * q[4];
 
-  double c1 = cos(q1);
-  double s1 = sin(q1);
-  double c2 = cos(q2);
-  double s2 = sin(q2);
-  // double c3 = cos(q3);
-  // double s3 = sin(q3);
-  double c4 = cos(q4);
-  double s4 = sin(q4);
-  double c5 = cos(q5);
-  double s5 = sin(q5);
-  double c6 = cos(q6);
-  double s6 = sin(q6);
+  // Precompute trig
+  double c1 = cos(q1), s1 = sin(q1);
+  double c2 = cos(q2), s2 = sin(q2);
+  double c3 = cos(q3), s3 = sin(q3);
+  double c4 = cos(q4), s4 = sin(q4);
+  double c5 = cos(q5), s5 = sin(q5);
+  double c6 = cos(q6), s6 = sin(q6);
   double c23 = cos(q2 + q3);
   double s23 = sin(q2 + q3);
 
-  fMe[0][0] = c1 * (c23 * (c4 * c5 * c6 - s4 * s6) - s23 * s5 * c6) - s1 * (s4 * c5 * c6 + c4 * s6);
-  fMe[1][0] = -s1 * (c23 * (-c4 * c5 * c6 + s4 * s6) + s23 * s5 * c6) + c1 * (s4 * c5 * c6 + c4 * s6);
-  fMe[2][0] = s23 * (s4 * s6 - c4 * c5 * c6) - c23 * s5 * c6;
+  double nx = -((s1 * s4 - c1 * c4 * c23) * c5 + s5 * s23 * c1) * c6 - (s1 * c4 + s4 * c1 * c23) * s6;
+  double ox = ((s1 * s4 - c1 * c4 * c23) * c5 + s5 * s23 * c1) * s6 - (s1 * c4 + s4 * c1 * c23) * c6;
+  double ax = -(s1 * s4 - c1 * c4 * c23) * s5 + s23 * c1 * c5;
+  double px = a1*c1 + a2*s2*c1 + a3*c1*c23 + d4*s23*c1 - d6*s1*s4*s5 + d6*s5*c1*c4*c23 + d6*s23*c1*c5;
 
-  fMe[0][1] = -c1 * (c23 * (c4 * c5 * s6 + s4 * c6) - s23 * s5 * s6) + s1 * (s4 * c5 * s6 - c4 * c6);
-  fMe[1][1] = -s1 * (c23 * (c4 * c5 * s6 + s4 * c6) - s23 * s5 * s6) - c1 * (s4 * c5 * s6 - c4 * c6);
-  fMe[2][1] = s23 * (c4 * c5 * s6 + s4 * c6) + c23 * s5 * s6;
+  double ny = ((s1 * c4 * c23 + s4 * c1) * c5 - s1 * s5 * s23) * c6 - (s1 * s4 * c23 - c1 * c4) * s6;
+  double oy = (-(s1 * c4 * c23 + s4 * c1) * c5 + s1 * s5 * s23) * s6 + (-s1 * s4 * c23 + c1 * c4) * c6;
+  double ay = (s1 * c4 * c23 + s4 * c1) * s5 + s1 * s23 * c5;
+  double py = a1*s1 + a2*s1*s2 + a3*s1*c23 + d4*s1*s23 + d6*s1*s5*c4*c23 + d6*s1*s23*c5 + d6*s4*s5*c1;
 
-  fMe[0][2] = c1 * (c23 * c4 * s5 + s23 * c5) - s1 * s4 * s5;
-  fMe[1][2] = s1 * (c23 * c4 * s5 + s23 * c5) + c1 * s4 * s5;
-  fMe[2][2] = -s23 * c4 * s5 + c23 * c5;
+  double nz = -(s5 * c23 + s23 * c4 * c5) * c6 + s4 * s6 * s23;
+  double oz = (s5 * c23 + s23 * c4 * c5) * s6 + s4 * s23 * c6;
+  double az = -s5 * s23 * c4 + c5 * c23;
+  double pz = a2*c2 - a3*s23 + d1 + d4*c23 - d6*s5*s23*c4 + d6*c5*c23;
 
-  fMe[0][3] = c1 * (c23 * (c4 * s5 * d6 - a3) + s23 * (c5 * d6 + d4) + a1 + a2 * c2) - s1 * s4 * s5 * d6;
-  fMe[1][3] = s1 * (c23 * (c4 * s5 * d6 - a3) + s23 * (c5 * d6 + d4) + a1 + a2 * c2) + c1 * s4 * s5 * d6;
-  fMe[2][3] = s23 * (a3 - c4 * s5 * d6) + c23 * (c5 * d6 + d4) - a2 * s2 + d1;
-
-  // std::cout << "Effector position fMe: " << std::endl << fMe;
-
-  return;
+// ===== Homogeneous matrix =====
+  fMe[0][0] = nx; fMe[0][1] = ox; fMe[0][2] = ax; fMe[0][3] = px;
+  fMe[1][0] = ny; fMe[1][1] = oy; fMe[1][2] = ay; fMe[1][3] = py;
+  fMe[2][0] = nz; fMe[2][1] = oz; fMe[2][2] = az; fMe[2][3] = pz;
+  fMe[3][0] = 0;  fMe[3][1] = 0;  fMe[3][2] = 0;  fMe[3][3] = 1;
 }
 /*!
 
@@ -834,11 +829,12 @@ void vpDenso::get_fMe(const vpColVector &q, vpHomogeneousMatrix &fMe) const
 */
 void vpDenso::get_fMw(const vpColVector &q, vpHomogeneousMatrix &fMw) const
 {
+
   double q1 = q[0];
-  double q2 = q[1];
-  double q3 = q[2];
+  double q2 = -(q[1] - M_PI / 2); // We change the sign of q2 to have a more intuitive solution
+  double q3 = -(q[2] + M_PI / 2); // We change the sign of q3 to have a more intuitive solution
   double q4 = q[3];
-  double q5 = q[4];
+  double q5 = -q[4];
   double q6 = q[5];
   //  We turn off the coupling since the measured positions are joint position
   //  taking into account the coupling factor. The coupling factor is relevant

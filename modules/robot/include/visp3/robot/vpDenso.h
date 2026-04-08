@@ -112,7 +112,7 @@ class VISP_EXPORT vpDenso
 public:
   vpDenso();
   vpDenso(const vpDenso &viper);
-  virtual ~vpDenso() { }
+  virtual ~vpDenso() {}
   vpDenso &operator=(const vpDenso &viper);
 
   /** @name Inherited functionalities from vpDenso */
@@ -148,6 +148,7 @@ public:
 private:
   bool convertJointPositionInLimits(unsigned int joint, const double &q, double &q_mod,
                                     const bool &verbose = false) const;
+  bool convertJointPositionInLimitsNews(double *q) const;
 
 public:
   static const unsigned int njoint; ///< Number of joint.

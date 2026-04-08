@@ -101,22 +101,22 @@ vpDenso6577::vpDenso6577()
   // Denavit-Hartenberg parameters
   a1 = 0.075;
   a2 = 0.365;
-  a3 = 0.090;
+  a3 = -0.090;
   d1 = 0.335;
   d4 = 0.405;
-  d6 = 0.080 + 0.1016; // To take into account the offset to go to the tool changer
+  d6 = 0.080;
   c56 = -341.33 / 9102.22;
 
   // Software joint limits in radians
   joint_min[0] = vpMath::rad(-170);
-  joint_min[1] = vpMath::rad(-190);
-  joint_min[2] = vpMath::rad(-29);
+  joint_min[1] = vpMath::rad(-100);
+  joint_min[2] = vpMath::rad(-119);
   joint_min[3] = vpMath::rad(-190);
   joint_min[4] = vpMath::rad(-120);
   joint_min[5] = vpMath::rad(-360);
   joint_max[0] = vpMath::rad(170);
-  joint_max[1] = vpMath::rad(45);
-  joint_max[2] = vpMath::rad(256);
+  joint_max[1] = vpMath::rad(135);
+  joint_max[2] = vpMath::rad(169);
   joint_max[3] = vpMath::rad(190);
   joint_max[4] = vpMath::rad(120);
   joint_max[5] = vpMath::rad(360);

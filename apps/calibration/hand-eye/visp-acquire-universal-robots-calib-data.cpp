@@ -131,7 +131,64 @@ std::vector<double> parseJoints(const std::string &data)
   }
   return joints;
 }
+// vpPoseVector generateHemispherePoses(double R,
+//                                           int n_theta,
+//                                           int n_phi, double x_offset = 0.5, double y_offset = 0.5, double z_offset = 0.5)
+// {
+//   vpPoseVector poses;
 
+//   for (int i = 0; i < n_theta; i++) {
+//     double theta = (M_PI / 2.0) * i / (n_theta - 1);  // 0 → pi/2
+//     for (int j = 0; j < n_phi; j++) {
+//       double phi = (2 * M_PI) * j / n_phi;  // 0 → 2pi
+
+//       // ===== Position =====
+//       double x = R * sin(theta) * cos(phi) + x_offset; // offset x by x_offset to avoid singularity at origin
+//       double y = R * sin(theta) * sin(phi) + y_offset; // offset y by y_offset to avoid singularity at origin
+//       double z = R * cos(theta) + z_offset; // offset z by z_offset to avoid singularity at origin
+
+//       // ===== Orientation: look at origin =====
+//       vpColVector z_axis(3);
+//       z_axis[0] = -x;
+//       z_axis[1] = -y;
+//       z_axis[2] = -z;
+//       z_axis.normalize();
+
+//       // giả sử up vector là (0,0,1)
+//       vpColVector up(3);
+//       up[0] = 0; up[1] = 0; up[2] = 1;
+
+//       // x_axis = up × z_axis
+//       vpColVector x_axis = vpColVector::crossProd(up, z_axis);
+//       x_axis.normalize();
+
+//       // y_axis = z × x
+//       vpColVector y_axis = vpColVector::crossProd(z_axis, x_axis);
+
+//       // ===== Rotation matrix =====
+//       vpRotationMatrix Rmat;
+//       for (int k = 0; k < 3; k++) {
+//         Rmat[k][0] = x_axis[k];
+//         Rmat[k][1] = y_axis[k];
+//         Rmat[k][2] = z_axis[k];
+//       }
+
+//       // ===== Convert to rx, ry, rz =====
+//       vpRxyzVector rxyz(Rmat);
+
+//       Pose p;
+//       p.x = x;
+//       p.y = y;
+//       p.z = z;
+//       p.rx = rxyz[0];
+//       p.ry = rxyz[1];
+//       p.rz = rxyz[2];
+
+//       poses.push_back(p);
+//     }
+//   }
+//   return poses;
+// }
 void usage(const char **argv, int error)
 {
   std::cout << "Synopsis" << std::endl
@@ -226,18 +283,6 @@ int main(int argc, const char **argv)
 #endif
     vpImageConvert::convert(frame, I);
 
-    // vpDisplayOpenCV *d = nullptr;
-    // if (opt_display) {
-    //   d = new vpDisplayOpenCV(I);
-    // }
-
-    // We already have the camera intrinsics in camera.xml
-    // // Save intrinsics
-    // vpCameraParameters cam;
-    // vpXmlParserCamera xml_camera;xml
-
-    // cam = g.getCameraParameters(RS2_STREAM_COLOR, vpCameraParameters::perspectiveProjWithDistortion);
-    // xml_camera.save(cam, opt_output_folder + "/ur_camera.xml", "Camera", width, height);
 
 #if (VISP_CXX_STANDARD >= VISP_CXX_STANDARD_11)
     std::shared_ptr<vpDisplay> pdisp = vpDisplayFactory::createDisplay(I, 10, 10, "Color image");
@@ -254,10 +299,42 @@ int main(int argc, const char **argv)
     double d2r = M_PI / 180.0;
     robot.init();
     robot.setRobotState(vpRobot::STATE_POSITION_CONTROL);
+
     for (int i = 0; i < poseMatrix.getRows(); i++) {
-      vpRowVector pose(poseMatrix.getRow(i));
-      std::cout << "Move to position: " << pose.data[0] << ", " << pose.data[1] << ", " << pose.data[2] << ", " << pose.data[3] << ", " << pose.data[4] << ", " << pose.data[5] << std::endl;
-      robot.sendPosition(pose.data);
+      vpRowVector pose = poseMatrix.getRow(i);
+      vpHomogeneousMatrix fMw;
+      vpHomogeneousMatrix fMe;
+      vpHomogeneousMatrix fMe_new;
+      vpHomogeneousMatrix wMe;
+      vpColVector q(6);
+      // q.data[0] = -131.52;
+      // q.data[1] = -84.08;
+      // q.data[2] = 44.36;
+      // q.data[3] = -32.88;
+      // q.data[4] = -87.38;
+      // q.data[5] = 20.66;
+      q.data[0] = 0;
+      q.data[1] = 0;
+      q.data[2] = 0;
+      q.data[3] = 0;
+      q.data[4] = 0;
+      q.data[5] = 0;
+      // Convert pose for denhavit hartenberg convention
+
+      q.deg2rad();
+      robot.get_fMe(q, fMe);
+      robot.get_wMe(wMe);
+      fMw = fMe * wMe.inverse();
+      std::cout << "wMe inverse" << std::endl << wMe.inverse() << std::endl;
+      std::cout << "fMw" << std::endl << fMw << std::endl;
+      std::cout << "fMe" << std::endl <<fMe << std::endl;
+
+      robot.getPosition(vpRobot::ARTICULAR_FRAME, q);
+      unsigned solution = robot.getInverseKinematicsWrist(fMe, q, true);
+      std::cout << "Move to pose " << q.rad2deg().t() << std::endl;
+      robot.get_fMe(q.deg2rad(), fMe_new);
+      std::cout << "fMe" << std::endl <<fMe_new << std::endl;
+      // robot.setPosition(vpRobot::ARTICULAR_FRAME, q);
       while (true) {
         bool end = false;
         cap >> frame; // get a new frame from camera
@@ -279,7 +356,8 @@ int main(int argc, const char **argv)
               for (int i = 3; i < 6; i++) {
                 q[i] *= d2r; // convert rotation from deg to rad
               }
-              vpPoseVector rPe(q[0], q[1], q[2], q[3], q[4], q[5]);
+              vpPoseVector rPe;
+              rPe.buildFrom(q[0], q[1], q[2], q[3], q[4], q[5]);
               std::stringstream ss_img, ss_pos;
               ss_img << opt_output_folder + "/ur_image-" << cpt << ".png";
               ss_pos << opt_output_folder + "/ur_pose_rPe_" << cpt << ".yaml";
@@ -308,7 +386,7 @@ int main(int argc, const char **argv)
   }
 #endif
   return EXIT_SUCCESS;
-  }
+}
 #else
 int main()
 {
