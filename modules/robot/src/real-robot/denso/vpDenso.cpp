@@ -192,47 +192,48 @@ bool vpDenso::convertJointPositionInLimitsNews(double *q) const
   double q_temp = 0;
   for (int i = 0; i < 6; i++) {
     q_temp = q[i];
-    // switch (i) {
-    // case 0:
-    //   q_temp = q[i];
-    //   break;
-    // case 1:
-    //   q_temp = -q[i] + M_PI / 2;
-    //   break;
-    // case 2:
-    //   q_temp = -q[i] - M_PI / 2;
-    //   break;
-    // case 3:
-    //   q_temp = q[i];
-    //   break;
-    // case 4:
-    //   q_temp = -q[i];
-    //   break;
-    // case 5:
-    //   q_temp = q[i];
-    //   break;
-    // default:
-    //   break;
-    // }
+    switch (i) {
+    case 0:
+      q_temp = q[i];
+      break;
+    case 1:
+      q_temp = -q[i] + M_PI / 2;
+      break;
+    case 2:
+      q_temp = -q[i] - M_PI / 2;
+      break;
+    case 3:
+      q_temp = q[i];
+      break;
+    case 4:
+      q_temp = -q[i];
+      break;
+    case 5:
+      q_temp = q[i];
+      break;
+    default:
+      break;
+    }
     if (q_temp >= joint_min[i] - eps && q_temp <= joint_max[i] + eps) {
       q[i] = q_temp;
-      return true;
+      continue;
     }
 
     q_temp = q_temp + 2 * M_PI;
     if (q_temp >= joint_min[i] - eps && q_temp <= joint_max[i] + eps) {
       q[i] = q_temp;
-      return true;
+      continue;
     }
 
-    q_temp = q_temp - 2 * M_PI;
+    q_temp = q_temp - 4 * M_PI;
     if (q_temp >= joint_min[i] - eps && q_temp <= joint_max[i] + eps) {
       q[i] = q_temp;
-      return true;
+      continue;
     }
-
+    std::cout << "Joint " << i << " not in limits: " << q[i] << std::endl;
+    return false;
   }
-  return false;
+  return true;
 }
 
 /*!
@@ -410,27 +411,34 @@ unsigned int vpDenso::getInverseKinematicsWrist(const vpHomogeneousMatrix &fMw, 
 
   for (unsigned int i = 0; i < 8; i += 2) {
     double C5 = az * c23[i] - ax * c1[i] * s23[i] - ay * s1[i] * s23[i];
-    q_sol[i][4] = acos(C5);
-    q_sol[i + 1][4] = -acos(C5);
-    for (int j = 0; j < 2; j++) {
-      q_sol[i + j][4] = q_sol[i + j][4];
-    }
-  }
-  // Compute q4
-  for (unsigned int i = 0; i < 8; i++) {
+    q_sol[i][4] = abs(acos(C5));
+    q_sol[i + 1][4] = -q_sol[i][4];
+
+    // Compute q4
     double frac_A = ay * c1[i] - ax * s1[i];
     double frac_B = az * s23[i] + ax * c1[i] * c23[i] + ay * s1[i] * c23[i];
     q_sol[i][3] = atan2(frac_A, frac_B);
-    if (abs(q_sol[i][3] + M_PI - q[3]) < abs(q_sol[i][3] - q[3])) q_sol[i][3] = q_sol[i][3] + M_PI;
+    if (sin(q_sol[i][3]) <= 0.) {
+      q_sol[i + 1][3] = q_sol[i][3] + M_PI;
+    }
+    else {
+      q_sol[i][3] = q_sol[i][3] + M_PI;
+      q_sol[i + 1][3] = q_sol[i][3];
+    }
+
+    // Compute q6
+    double frac_X = -(oz * c23[i] - ox * s23[i]*c1[i] - oy * s23[i]*s1[i]);
+    double frac_Y = nz * c23[i] - nx * s23[i]*c1[i] - ny * s23[i]*s1[i];
+    q_sol[i][5] = atan2(frac_X, frac_Y);
+    if (sin(q_sol[i][5]) >= 0.) {
+      q_sol[i + 1][5] = q_sol[i][5] + M_PI;
+    }
+    else {
+      q_sol[i][5] = q_sol[i][5] + M_PI;
+      q_sol[i + 1][5] = q_sol[i][5];
+    }
   }
-  // Compute q6
-  // 4 solutions for q6 and 4 more solutions by flipping the wrist (see below)
-  for (unsigned int i = 0; i < 8; i++) {
-    double frac_A = -(oz * c23[i] - ox * s23[i]*c1[i] - oy * s23[i]*s1[i]);
-    double frac_B = nz * c23[i] - nx * s23[i]*c1[i] - ny * s23[i]*s1[i];
-    q_sol[i][5] = atan2(frac_A, frac_B);
-    if (abs(q_sol[i][5] + M_PI - q[5]) < abs(q_sol[i][5] - q[5])) q_sol[i][5] = q_sol[i][5] + M_PI;
-  }
+
   for (int i = 0; i < 8; i++) {
     ok[i] = convertJointPositionInLimitsNews(q_sol[i].data);
   }
@@ -467,7 +475,7 @@ unsigned int vpDenso::getInverseKinematicsWrist(const vpHomogeneousMatrix &fMw, 
   // std::cout << "dist: " << dist.t() << std::endl;
   if (nbsol) {
     for (unsigned int i = 0; i < 8; i++) {
-      std::cout << q_sol[i].t() << " dist: " << dist[i] << " ok: " << ok[i] << std::endl;
+      std::cout << q_sol[i].rad2deg().t() << " dist: " << dist[i] << " ok: " << ok[i] << std::endl;
       if (ok[i] == true) {
         if (dist[i] < dist[sol])
           sol = i;
@@ -988,32 +996,38 @@ void vpDenso::get_eJe(const vpColVector &q, vpMatrix &eJe) const
   vpMatrix V(6, 6);
   V = 0;
   // Compute the first and last block of V
+  vpHomogeneousMatrix fMe;
   vpHomogeneousMatrix fMw;
-  get_fMw(q, fMw);
-  vpRotationMatrix fRw;
-  fMw.extract(fRw);
+  vpHomogeneousMatrix wMe;
+  vpHomogeneousMatrix eMw;
+  vpTranslationVector etw;
   vpRotationMatrix wRf;
+  vpRotationMatrix fRw;
+  vpMatrix fJw;
+
+  get_fMe(q, fMe);
+  get_wMe(wMe);
+  eMw = wMe.inverse();
+  fMw = fMe * eMw;
+  eMw.extract(etw);
+
+  vpMatrix block2 = etw.skew() * wRf;
+
+  fMw.extract(fRw);
   wRf = fRw.inverse();
+
   for (unsigned int i = 0; i < 3; i++) {
     for (unsigned int j = 0; j < 3; j++) {
       V[i][j] = V[i + 3][j + 3] = wRf[i][j];
     }
   }
-  // Compute the second block of V
-  vpHomogeneousMatrix wMe;
-  get_wMe(wMe);
-  vpHomogeneousMatrix eMw;
-  eMw = wMe.inverse();
-  vpTranslationVector etw;
-  eMw.extract(etw);
-  vpMatrix block2 = etw.skew() * wRf;
+
   for (unsigned int i = 0; i < 3; i++) {
     for (unsigned int j = 0; j < 3; j++) {
       V[i][j + 3] = block2[i][j];
     }
   }
   // Compute eJe
-  vpMatrix fJw;
   get_fJw(q, fJw);
   eJe = V * fJw;
 

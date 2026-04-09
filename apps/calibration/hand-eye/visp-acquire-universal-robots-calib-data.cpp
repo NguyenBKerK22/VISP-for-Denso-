@@ -331,7 +331,6 @@ int main(int argc, const char **argv)
 
       robot.getPosition(vpRobot::ARTICULAR_FRAME, q);
       unsigned solution = robot.getInverseKinematicsWrist(fMe, q, true);
-      std::cout << "Move to pose " << q.rad2deg().t() << std::endl;
       robot.get_fMe(q.deg2rad(), fMe_new);
       std::cout << "fMe" << std::endl <<fMe_new << std::endl;
       // robot.setPosition(vpRobot::ARTICULAR_FRAME, q);

@@ -75,7 +75,6 @@ bool parseData(char *buffer, double *q, int func)
   int i = 0;
   switch (func) {
   case 0:
-    std::cout << "Received position: " << buffer << std::endl;
     while (token != NULL) {
       if (i >= 6) return true;
 
@@ -84,17 +83,14 @@ bool parseData(char *buffer, double *q, int func)
     }
     break;
   case 1:
-    std::cout << "Received joint positions: " << buffer << std::endl;
     while (token != NULL) {
       if (i >= 6) return false;
 
       q[i++] = atof(token);
       token = strtok(NULL, ",");
     }
-    std::cout << "Number of joints read: " << i << std::endl;
     break;
   default:
-    std::cerr << "Unknown function type for parsing data" << std::endl;
     return false;
   }
   return true;
@@ -171,7 +167,7 @@ bool vpRobotDenso6577::sendPosition(double *q)
     positionRounded[i] = (int)round(q[i] * 100);
   }
   snprintf(buffer, sizeof(buffer), "%d,%d,%d,%d,%d,%d\r", positionRounded[0], positionRounded[1], positionRounded[2], positionRounded[3], positionRounded[4], positionRounded[5]);
-  std::cout << "Sending position command: " << buffer  << std::endl;
+
   int ret_val = this->uartSend((const uint8_t *)buffer, strlen(buffer));
   if (ret_val < 0) {
     std::cerr << "Error sending command to set joint position" << std::endl;
@@ -829,7 +825,9 @@ void vpRobotDenso6577::get_eJe(vpMatrix &eJe)
 
   //// Try(PrimitiveACQ_POS_J_Viper850(position, &timestamp));
   // TODO: get the joint position from the low level controller
-  getJointPosition(position);
+  if (!getJointPosition(position)) {
+    return;
+  }
   vpColVector q(6);
   for (unsigned int i = 0; i < njoint; i++)
     q[i] = vpMath::rad(position[i]);
@@ -1604,7 +1602,7 @@ void vpRobotDenso6577::setVelocity(const vpRobot::vpControlFrameType frame, cons
 
 
 
-  double delta_t = 0.10; // 10 ms
+  double delta_t = 0.2; // 10 ms
   switch (frame) {
 
   case vpRobot::CAMERA_FRAME: {
@@ -1670,9 +1668,7 @@ void vpRobotDenso6577::setVelocity(const vpRobot::vpControlFrameType frame, cons
     // Joint velocity → joint position
     vpColVector q;
     getPosition(vpRobot::ARTICULAR_FRAME, q);
-    std::cout << "Current joint position: " << q.t() << std::endl;
     vpColVector q_new = q + vel_sat * delta_t;
-    std::cout << "Set velocity in joint space, new joint position: " << q_new.t() << std::endl;
     setPosition(vpRobot::ARTICULAR_FRAME, q_new);
     break;
   }

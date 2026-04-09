@@ -122,11 +122,7 @@ int main()
     std::cout << "Warning, opt_eMc_filename is empty! Use hard coded values." << std::endl;
   }
   vpHomogeneousMatrix e_M_c(e_P_c);
-  vpHomogeneousMatrix eMc_new;
   std::cout << "e_M_c:\n" << e_M_c << std::endl;
-  vpRotationMatrix R_flip;
-  R_flip[0][0] = 1; R_flip[1][1] = -1; R_flip[2][2] = -1;
-  eMc_new = e_M_c * R_flip;
 // Initialize display and camera parameters
   vpImage<unsigned char> I;
 
@@ -188,7 +184,7 @@ int main()
   task.print();
 
   robot.setRobotState(vpRobot::STATE_POSITION_CONTROL);
-
+  vpColVector q;
   std::cout << "\nHit CTRL-C to stop the loop...\n" << std::flush;
   for (;;) {
     cap >> frame; // get a new frame from camera
@@ -227,7 +223,6 @@ int main()
     robot.setVelocity(vpRobot::ARTICULAR_FRAME, v);
 
     // Get the measured joint positions of the robot
-    vpColVector q;
     robot.getPosition(vpRobot::ARTICULAR_FRAME, q);
     // Save measured joint positions of the robot in the log file
     // - q[0], q[1], q[2] correspond to measured joint translation
@@ -243,6 +238,7 @@ int main()
 
     // std::cout << "|| s - s* || = "  << ( task.getError() ).sumSquare() <<
     // std::endl;
+    vpTime::wait(200); // ~100 Hz (mượt hơn)
   }
 
   std::cout << "Display task information: " << std::endl;
