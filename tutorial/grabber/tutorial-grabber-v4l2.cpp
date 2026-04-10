@@ -145,6 +145,8 @@ int main(int argc, const char *argv[])
     device << "/dev/video" << opt_device;
     g.setDevice(device.str());
     g.setScale(opt_scale);
+    g.setWidth(640);
+    g.setHeight(360);
     g.open(I);
 
     std::cout << "Image size : " << I.getWidth() << " " << I.getHeight() << std::endl;
