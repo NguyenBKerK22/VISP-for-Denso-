@@ -5,7 +5,7 @@
 #include <visp3/io/vpVideoReader.h>
 #include <visp3/mbt/vpMbGenericTracker.h>
 #include <visp3/vision/vpKeyPoint.h>
-
+#include <visp3/core/vpXmlParserCamera.h>
 int main(int argc, char **argv)
 {
 #if defined(VISP_HAVE_OPENCV) && defined(HAVE_OPENCV_IMGPROC) && defined(VISP_HAVE_DISPLAY) && \
@@ -21,6 +21,13 @@ int main(int argc, char **argv)
 #else
   vpDisplay *display = nullptr;
 #endif
+  int opt_device = 2;
+  bool opt_display = true;
+  std::string opt_camera_name = "Camera";
+  std::string opt_intrinsic_file = "camera.xml";
+  std::string opt_eMc_filename = "rc5_ePc.yaml";
+  vpHomogeneousMatrix cMo; // current pose of the camera in the object frame
+
   try {
     std::string videoname = "teabox.mp4";
 
@@ -47,14 +54,68 @@ int main(int argc, char **argv)
       << "cao or wrl]" << std::endl;
     std::cout << "Tracker optional config files: " << objectname << ".[ppm]" << std::endl;
 
-    vpImage<unsigned char> I;
+    cv::VideoCapture cap(opt_device, cv::CAP_V4L2); // open the default camera
+    cv::Mat frame;
+    try {
+      /* code */
+      if (!cap.isOpened()) {            // check if we succeeded
+        std::cout << "Failed to open the camera" << std::endl;
+        return EXIT_FAILURE;
+      }
+      int i = 0;
+      while ((i++ < 20) && !cap.read(frame)) {
+      } // warm up camera by skiping unread frames
+      std::cout << "Image size : " << frame.rows << " " << frame.cols << std::endl;
+    }
+    catch (const std::exception &e) {
+      std::cerr << e.what() << '\n';
+    }
+    // Get camera intrinsics
     vpCameraParameters cam;
-    vpHomogeneousMatrix cMo;
+    vpXmlParserCamera parser;
+    try {
+      /* code */
+      if (!vpIoTools::checkFilename(opt_intrinsic_file)) {
+        std::cout << "Camera parameters file " << opt_intrinsic_file << " doesn't exist." << std::endl;
+        std::cout << "Use --help option to see how to set its location..." << std::endl;
+        return EXIT_FAILURE;
+      }
+      if (parser.parse(cam, opt_intrinsic_file, opt_camera_name, vpCameraParameters::perspectiveProjWithDistortion) !=
+        vpXmlParserCamera::SEQUENCE_OK) {
+        std::cout << "Unable to parse parameters with distortion for camera \"" << opt_camera_name << "\" from "
+          << opt_intrinsic_file << " file" << std::endl;
+        std::cout << "Attempt to find parameters without distortion" << std::endl;
 
-    vpVideoReader g;
-    g.setFileName(videoname);
-    g.open(I);
+        if (parser.parse(cam, opt_intrinsic_file, opt_camera_name,
+                         vpCameraParameters::perspectiveProjWithoutDistortion) != vpXmlParserCamera::SEQUENCE_OK) {
+          std::cout << "Unable to parse parameters without distortion for camera \"" << opt_camera_name << "\" from "
+            << opt_intrinsic_file << " file" << std::endl;
+          return EXIT_FAILURE;
+        }
+      }
 
+    }
+    catch (const std::exception &e) {
+      std::cerr << e.what() << '\n';
+    }
+    // Initialize display
+    vpImage<vpRGBa> I; // To acquire color images
+    vpImageConvert::convert(frame, I);
+    std::shared_ptr<vpDisplay> display = nullptr;
+    vpDisplayOpenCV *d = nullptr;
+    try {
+      /* code */
+      if (opt_display) {
+        d = new vpDisplayOpenCV(I);
+      }
+      display = vpDisplayFactory::createDisplay(I, 10, 10, "Current image");
+      vpDisplay::display(I);
+      vpDisplay::flush(I);
+
+    }
+    catch (const std::exception &e) {
+      std::cerr << e.what() << '\n';
+    }
 #if (VISP_CXX_STANDARD >= VISP_CXX_STANDARD_11)
     display = vpDisplayFactory::createDisplay(I, 100, 100, "Model-based edge tracker");
 #else
@@ -82,7 +143,6 @@ int main(int argc, char **argv)
       me.setSampleStep(4);
       me.setNbTotalSample(250);
       tracker.setMovingEdge(me);
-      cam.initPersProjWithoutDistortion(839, 839, 325, 243);
       tracker.setCameraParameters(cam);
       tracker.setAngleAppear(vpMath::rad(70));
       tracker.setAngleDisappear(vpMath::rad(80));
@@ -194,8 +254,10 @@ int main(int argc, char **argv)
     double error;
     bool click_done = false;
 
-    while (!g.end()) {
-      g.acquire(I);
+    while (true) {
+      cap >> frame; // get a new frame from camera
+      // Convert the image in ViSP format and display it
+      vpImageConvert::convert(frame, I);
       vpDisplay::display(I);
 
       vpDisplay::displayText(I, 10, 10, "Detection and localization in process...", vpColor::red);

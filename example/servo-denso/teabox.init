@@ -1,5 +1,5 @@
 4                  # Number of points
 0     0      0     # Point 0
-0.165 0      0     # Point 3
-0.165 0     -0.08  # Point 2
-0.165 0.068 -0.08  # Point 5
+-0.016 0 0     # Point 3
+0 0     -0.039  # Point 2
+0 -0.0074 0  # Point 5

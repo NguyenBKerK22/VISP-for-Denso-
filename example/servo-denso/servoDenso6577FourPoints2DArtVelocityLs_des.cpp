@@ -78,7 +78,7 @@
 int main()
 {
 // Parameter definition
-  int opt_device = 0;
+  int opt_device = 2;
   bool opt_display = true;
   std::string opt_camera_name = "Camera";
   std::string opt_intrinsic_file = "camera.xml";
@@ -102,7 +102,6 @@ int main()
   }
   // Get camera intrinsics
   vpCameraParameters cam;
-  vpHomogeneousMatrix cMo;
   vpXmlParserCamera parser;
   try {
     /* code */
@@ -221,6 +220,9 @@ int main()
   polygons = pair.first;
   roisPt = pair.second;
 
+  vpHomogeneousMatrix cdMo; // desired pose of the camera in the object frame
+  vpHomogeneousMatrix cMo; // current pose of the camera in the object frame
+
   std::vector<cv::Point3f> points3f;
   tracker.getPose(cMo);
   vpKeyPoint::compute3DForPointsInPolygons(cMo, cam, trainKeyPoints, polygons, roisPt, points3f);
@@ -267,29 +269,25 @@ int main()
   }
   vpHomogeneousMatrix e_M_c(e_P_c);
 
-  vpHomogeneousMatrix cdMo; // desired pose of the camera in the object frame
-  vpHomogeneousMatrix cMo; // current pose of the camera in the object frame
-
   vpRobotDenso6577 robot;
   robot.init(); // param: redefine tool and camera extrinsic parameters for eMC
   robot.set_eMc(e_M_c);
 
   vpDisplay::flush(I);
 
-  vpFeatureTranslation s_translation(vpFeatureTranslation::cMe); // Hiện tại
-  vpFeatureTranslation sd_translation(vpFeatureTranslation::cMe); // Mong muốn
+  vpFeatureTranslation s_translation; // Hiện tại
+  vpFeatureTranslation sd_translation; // Mong muốn
 
-  vpFeatureThetaU s_theta(vpFeatureThetaU::cRcd); // Hiện tại (Rotation Current to Desired)
-  vpFeatureThetaU sd_theta(vpFeatureThetaU::cRcd); // Mong muốn (mặc định sẽ là 0)
+  vpFeatureThetaU s_theta; // Hiện tại (Rotation Current to Desired)
+  vpFeatureThetaU sd_theta; // Mong muốn (mặc định sẽ là 0)
 
   // --- Thiết lập vị trí đích (cdMo) ---
   // Giả sử bạn muốn camera cách vật thể 0.5m theo trục Z và nhìn thẳng vào nó
-  vpHomogeneousMatrix cdMo(0, 0, 0.5, 0, 0, 0);
 
   // Xây dựng các đặc trưng mong muốn từ cdMo
   sd_translation.buildFrom(cdMo);
   sd_theta.buildFrom(cdMo); // s* của ThetaU thường là ma trận đơn vị (sai lệch bằng 0)
-
+  std::cout << "hehe" << std::endl;
   vpServo task;
   task.setServo(vpServo::EYEINHAND_L_cVe_eJe);
   task.setInteractionMatrixType(vpServo::DESIRED, vpServo::PSEUDO_INVERSE);
@@ -326,6 +324,7 @@ int main()
   task.set_eJe(eJe);
 
   double error;
+  std::cout << "\nHit CTRL-C to stop the loop...\n" << std::endl;
   for (;;) {
     cap >> frame; // get a new frame from camera
     // Convert the image in ViSP format and display it
@@ -335,56 +334,81 @@ int main()
 
     // Achieve the tracking of the dot in the image
     if (keypoint_detection.matchPoint(I, cam, cMo, error, elapsedTime)) {
-      //! [Matching and pose estimation]
+      try {
+          // 1. Cập nhật Tracker với Pose từ Keypoint
+        tracker.setPose(I, cMo);
 
-      //! [Tracker set pose]
-      tracker.setPose(I, cMo);
-      //! [Tracker set pose]
-      //! [Display]
-      tracker.display(I, cMo, cam, vpColor::red, 2);
+        // 2. Thực hiện tracking dựa trên cạnh (Edge-based tracking)
+        // Bước này cực kỳ quan trọng để tăng độ chính xác trước khi Servo
+        tracker.track(I);
+        tracker.getPose(cMo); // Lấy Pose đã được tối ưu
 
-      vpDisplay::displayFrame(I, cMo, cam, 0.025, vpColor::none, 3);
-      // Display a green cross at the center of gravity position in the image
+        // 3. Hiển thị mô hình để debug
+        tracker.display(I, cMo, cam, vpColor::red, 2);
+        vpDisplay::displayFrame(I, cMo, cam, 0.05, vpColor::none, 3);
 
-      // Update the point feature from the dot location
-      s_translation.buildFrom(cMo);
-      s_theta.buildFrom(cMo);
-      // Get the jacobian of the robot
-      robot.get_eJe(eJe);
-      // Update this jacobian in the task structure. It will be used to
-      // compute the velocity skew (as an articular velocity) qdot = -lambda *
-      // L^+ * cVe * eJe * (s-s*)
-      task.set_eJe(eJe);
+        // 4. Cập nhật đặc trưng Visual Servoing (s)
+        s_translation.buildFrom(cMo);
+        s_theta.buildFrom(cMo);
 
-      //  std::cout << (vpMatrix)cVe*eJe << std::endl ;
+        // 5. Tính toán ma trận Jacobian và Vận tốc
+        // Lấy ma trận vận tốc từ Camera sang End-effector (nếu robot di động)
+        // vphmcl::get_cVe(robot, cVe);
 
-      vpColVector v;
-      // Compute the visual servoing skew vector
-      v = task.computeControlLaw();
+        vpMatrix eJe;
+        robot.get_eJe(eJe); // Lấy Jacobian của robot
+        task.set_eJe(eJe);
 
-      // Display the current and desired feature points in the image display
-      vpServoDisplay::display(task, cam, I);
+        // Tính toán luật điều khiển (Control Law)
+        // v = -lambda * L^+ * (s - s*)
+        vpColVector qdot = task.computeControlLaw();
 
-      // Apply the computed joint velocities to the robot
-      robot.setVelocity(vpRobot::ARTICULAR_FRAME, v);
+        // 7. Gửi lệnh điều khiển đến robot
+        robot.setVelocity(vpRobot::ARTICULAR_FRAME, qdot);
 
-      // Get the measured joint positions of the robot
-      robot.getPosition(vpRobot::ARTICULAR_FRAME, q);
-      // Save measured joint positions of the robot in the log file
-      // - q[0], q[1], q[2] correspond to measured joint translation
-      //   positions in m
-      // - q[3], q[4], q[5] correspond to measured joint rotation
-      //   positions in rad
-
-      // Save feature error (s-s*) for the feature point. For this feature
-      // point, we have 2 errors (along x and y axis).  This error is
-      // expressed in meters in the camera frame
-
-      vpDisplay::flush(I);
+      }
+      catch (const vpException &e) {
+        std::cout << "Tracking lost or Matrix error: " << e.getMessage() << std::endl;
+        robot.stopMotion(); // Dừng robot nếu mất dấu
+      }
     }
-      // std::cout << "|| s - s* || = "  << ( task.getError() ).sumSquare() <<
-      // std::endl;
-    vpTime::wait(200); // ~100 Hz (mượt hơn)
+    else {
+      robot.stopMotion(); // Dừng robot nếu Keypoint không khớp
+    }
+  // robot.get_eJe(eJe);
+  //   // Update this jacobian in the task structure. It will be used to
+  //   // compute the velocity skew (as an articular velocity) qdot = -lambda *
+  //   // L^+ * cVe * eJe * (s-s*)
+  // task.set_eJe(eJe);
+
+  // //  std::cout << (vpMatrix)cVe*eJe << std::endl ;
+
+  // vpColVector v;
+  // // Compute the visual servoing skew vector
+  // v = task.computeControlLaw();
+
+  // // Display the current and desired feature points in the image display
+  // vpServoDisplay::display(task, cam, I);
+
+  // // Apply the computed joint velocities to the robot
+  // robot.setVelocity(vpRobot::ARTICULAR_FRAME, v);
+
+  // // Get the measured joint positions of the robot
+  // robot.getPosition(vpRobot::ARTICULAR_FRAME, q);
+  // // Save measured joint positions of the robot in the log file
+  // // - q[0], q[1], q[2] correspond to measured joint translation
+  // //   positions in m
+  // // - q[3], q[4], q[5] correspond to measured joint rotation
+  // //   positions in rad
+
+  // // Save feature error (s-s*) for the feature point. For this feature
+  // // point, we have 2 errors (along x and y axis).  This error is
+  // // expressed in meters in the camera frame
+
+    vpDisplay::flush(I);
+    // // std::cout << "|| s - s* || = "  << ( task.getError() ).sumSquare() <<
+    // // std::endl;
+    // vpTime::wait(200); // ~100 Hz (mượt hơn)
   }
 
   // std::cout << "Display task information: " << std::endl;
