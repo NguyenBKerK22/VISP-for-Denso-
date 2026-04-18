@@ -73,9 +73,13 @@
 #include <visp3/mbt/vpMbGenericTracker.h>
 #include <visp3/vision/vpKeyPoint.h>
 
+<<<<<<< HEAD
 
 #define HAVE_OPENCV_FEATURES
 int main()
+=======
+int main(int argc, char *argv[])
+>>>>>>> 2c3823b (Best calibration result - move oke)
 {
 // Parameter definition
   int opt_device = 2;
@@ -84,6 +88,11 @@ int main()
   std::string opt_intrinsic_file = "camera.xml";
   std::string opt_eMc_filename = "rc5_ePc.yaml";
 // Initialize camera and display
+  for (int i = 1; i < argc; i++) {
+    if (std::string(argv[i]) == "--device" && i + 1 < argc) {
+      opt_device = std::atoi(argv[++i]);
+    }
+  }
   cv::VideoCapture cap(opt_device, cv::CAP_V4L2); // open the default camera
   cv::Mat frame;
   try {
@@ -323,8 +332,25 @@ int main()
   robot.get_eJe(eJe);
   task.set_eJe(eJe);
 
+<<<<<<< HEAD
   double error;
   std::cout << "\nHit CTRL-C to stop the loop...\n" << std::endl;
+=======
+  vpTRACE("\t we want to see a point on a point..");
+  std::cout << std::endl;
+  task.addFeature(p, pd);
+
+  vpTRACE("\t set the gain");
+  task.setLambda(0.8);
+
+  vpTRACE("Display task information ");
+  task.print();
+  std::cout << "px:" << p.get_x() << ", py:" << p.get_y() << ", pz:" << p.get_Z() << std::endl;
+  robot.setRobotState(vpRobot::STATE_POSITION_CONTROL);
+  vpColVector q;
+  vpHomogeneousMatrix fMe;
+  std::cout << "\nHit CTRL-C to stop the loop...\n" << std::flush;
+>>>>>>> 2c3823b (Best calibration result - move oke)
   for (;;) {
     cap >> frame; // get a new frame from camera
     // Convert the image in ViSP format and display it
@@ -366,6 +392,7 @@ int main()
         // 7. Gửi lệnh điều khiển đến robot
         robot.setVelocity(vpRobot::ARTICULAR_FRAME, qdot);
 
+<<<<<<< HEAD
       }
       catch (const vpException &e) {
         std::cout << "Tracking lost or Matrix error: " << e.getMessage() << std::endl;
@@ -405,6 +432,21 @@ int main()
   // // point, we have 2 errors (along x and y axis).  This error is
   // // expressed in meters in the camera frame
 
+=======
+    // Get the measured joint positions of the robot
+    robot.getPosition(vpRobot::ARTICULAR_FRAME, q);
+    robot.get_fMe(q, fMe);
+    // Save measured joint positions of the robot in the log file
+    // - q[0], q[1], q[2] correspond to measured joint translation
+    //   positions in m
+    // - q[3], q[4], q[5] correspond to measured joint rotation
+    //   positions in rad
+
+    // Save feature error (s-s*) for the feature point. For this feature
+    // point, we have 2 errors (along x and y axis).  This error is
+    // expressed in meters in the camera frame
+    task.print();
+>>>>>>> 2c3823b (Best calibration result - move oke)
     vpDisplay::flush(I);
     // // std::cout << "|| s - s* || = "  << ( task.getError() ).sumSquare() <<
     // // std::endl;

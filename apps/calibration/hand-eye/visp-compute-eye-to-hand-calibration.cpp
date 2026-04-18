@@ -179,7 +179,13 @@ int main(int argc, const char *argv[])
         std::cout << "Unable to read data from " << file_rPe << ". Skip data" << std::endl;
         continue;
       }
-
+      double d2r = M_PI / 180.0;
+      for (int i = 3; i < 6; i++) {
+        rPe.data[i] *= d2r; // convert rotation from deg to rad
+      }
+      for (int i = 0; i < 3; i++) {
+        rPe.data[i] = rPe.data[i] / 1000.0; // convert translation from mm to m
+      }
       vpPoseVector cPo;
       std::string file_cPo = vpIoTools::createFilePath(opt_data_path, it_cPo->second);
       if (cPo.loadYAML(file_cPo, cPo) == false) {

@@ -201,7 +201,15 @@ int main(int argc, const char *argv[])
     std::cout << "Not enough data pairs found." << std::endl;
     return EXIT_FAILURE;
   }
-
+  for (int i = 0; i< rMe.size(); i++) {
+    for (int j = 0; j < rMe[i].getRows(); j++) {
+      for (int k = 0; k < rMe[i].getCols(); k++) {
+        std::cout << rMe[i][j][k] << " ";
+      }
+      std::cout << std::endl;
+    }
+    std::cout << std::endl;
+  }
   int ret = vpHandEyeCalibration::calibrate(cMo, rMe, eMc, rMo);
 
   if (ret == 0) {

@@ -289,88 +289,39 @@ int main(int argc, const char **argv)
 #else
     pdisp = vpDisplayFactory::allocateDisplay(I, 10, 10, "Color image");
 #endif
-    vpMatrix poseMatrix;
-    if (poseMatrix.loadYAML(file_pose, poseMatrix) == false) {
-      std::cout << "Unable to read data from " << file_pose << ". Skip data" << std::endl;
-      return EXIT_FAILURE;
-    }
     vpRobotDenso6577 robot;
     unsigned cpt = 0;
     double d2r = M_PI / 180.0;
     robot.init();
     robot.setRobotState(vpRobot::STATE_POSITION_CONTROL);
+    while (true) {
+      bool end = false;
+      cap >> frame; // get a new frame from camera
+      // Convert the image in ViSP format and display it
+      vpImageConvert::convert(frame, I);
+      vpDisplay::display(I);
+      vpDisplay::displayText(I, 15, 15, "Left click to acquire data", vpColor::red);
+      vpDisplay::displayText(I, 30, 15, "Right click to quit", vpColor::red);
+      vpMouseButton::vpMouseButtonType button;
 
-    for (int i = 0; i < poseMatrix.getRows(); i++) {
-      vpRowVector pose = poseMatrix.getRow(i);
-      vpHomogeneousMatrix fMw;
-      vpHomogeneousMatrix fMe;
-      vpHomogeneousMatrix fMe_new;
-      vpHomogeneousMatrix wMe;
-      vpColVector q(6);
-      // q.data[0] = -131.52;
-      // q.data[1] = -84.08;
-      // q.data[2] = 44.36;
-      // q.data[3] = -32.88;
-      // q.data[4] = -87.38;
-      // q.data[5] = 20.66;
-      q.data[0] = 0;
-      q.data[1] = 0;
-      q.data[2] = 0;
-      q.data[3] = 0;
-      q.data[4] = 0;
-      q.data[5] = 0;
-      // Convert pose for denhavit hartenberg convention
+      if (vpDisplay::getClick(I, button, false)) {
+        if (button == vpMouseButton::button1) {
+          cpt++;
+          double *q = new double[6];
 
-      q.deg2rad();
-      robot.get_fMe(q, fMe);
-      robot.get_wMe(wMe);
-      fMw = fMe * wMe.inverse();
-      std::cout << "wMe inverse" << std::endl << wMe.inverse() << std::endl;
-      std::cout << "fMw" << std::endl << fMw << std::endl;
-      std::cout << "fMe" << std::endl <<fMe << std::endl;
-
-      robot.getPosition(vpRobot::ARTICULAR_FRAME, q);
-      unsigned solution = robot.getInverseKinematicsWrist(fMe, q, true);
-      robot.get_fMe(q.deg2rad(), fMe_new);
-      std::cout << "fMe" << std::endl <<fMe_new << std::endl;
-      // robot.setPosition(vpRobot::ARTICULAR_FRAME, q);
-      while (true) {
-        bool end = false;
-        cap >> frame; // get a new frame from camera
-        // Convert the image in ViSP format and display it
-        vpImageConvert::convert(frame, I);
-        vpDisplay::display(I);
-        vpDisplay::displayText(I, 15, 15, "Left click to acquire data", vpColor::red);
-        vpDisplay::displayText(I, 30, 15, "Right click to quit", vpColor::red);
-        vpMouseButton::vpMouseButtonType button;
-
-        if (vpDisplay::getClick(I, button, false)) {
-          if (button == vpMouseButton::button1) {
-            cpt++;
-            double *q = new double[6];
-            if (robot.getJointPosition(q, 0)) {
-              for (int i = 0; i < 3; i++) {
-                q[i] = q[i] / 1000.0; // convert translation from mm to m
-              }
-              for (int i = 3; i < 6; i++) {
-                q[i] *= d2r; // convert rotation from deg to rad
-              }
-              vpPoseVector rPe;
-              rPe.buildFrom(q[0], q[1], q[2], q[3], q[4], q[5]);
-              std::stringstream ss_img, ss_pos;
-              ss_img << opt_output_folder + "/ur_image-" << cpt << ".png";
-              ss_pos << opt_output_folder + "/ur_pose_rPe_" << cpt << ".yaml";
-              std::cout << "Save: " << ss_img.str() << " and " << ss_pos.str() << std::endl;
-              vpImageIo::write(I, ss_img.str());
-              rPe.saveYAML(ss_pos.str(), rPe);
-              end = true;
-              delete q;
-            }
-          }
+          vpPoseVector rPe;
+          rPe.buildFrom(q[0], q[1], q[2], q[3], q[4], q[5]);
+          std::stringstream ss_img, ss_pos;
+          ss_img << opt_output_folder + "/ur_image-" << cpt << ".png";
+          ss_pos << opt_output_folder + "/ur_pose_rPe_" << cpt << ".yaml";
+          std::cout << "Save: " << ss_img.str() << " and " << ss_pos.str() << std::endl;
+          vpImageIo::write(I, ss_img.str());
+          rPe.saveYAML(ss_pos.str(), rPe);
+          end = true;
+          delete q;
         }
-        if (end == true) break;
-        vpDisplay::flush(I);
       }
+      vpDisplay::flush(I);
     }
   }
   catch (const vpException &e) {

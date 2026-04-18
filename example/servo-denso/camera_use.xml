@@ -1,0 +1,48 @@
+<?xml version="1.0"?>
+<root>
+  <!--This file stores intrinsic camera parameters used
+   in the vpCameraParameters Class of ViSP available
+   at https://visp.inria.fr/download/ .
+   It can be read with the parse method of
+   the vpXmlParserCamera class.-->
+  <camera>
+    <!--Name of the camera-->
+    <name>Camera</name>
+    <!--Size of the image on which camera calibration was performed-->
+    <image_width>640</image_width>
+    <image_height>480</image_height>
+    <!--Intrinsic camera parameters computed for each projection model-->
+    <model>
+      <!--Projection model type-->
+      <type>perspectiveProjWithoutDistortion</type>
+      <!--Pixel ratio-->
+      <px>702.28142020555003</px>
+      <py>699.13789005866374</py>
+      <!--Principal point-->
+      <u0>323.56447553316212</u0>
+      <v0>244.06472734191718</v0>
+    </model>
+  </camera>
+  <camera>
+    <!--Name of the camera-->
+    <name>Camera</name>
+    <!--Size of the image on which camera calibration was performed-->
+    <image_width>640</image_width>
+    <image_height>480</image_height>
+    <!--Intrinsic camera parameters computed for each projection model-->
+    <model>
+      <!--Projection model type-->
+      <type>perspectiveProjWithDistortion</type>
+      <!--Pixel ratio-->
+      <px>710.14182438153955</px>
+      <py>708.91087743511355</py>
+      <!--Principal point-->
+      <u0>324.82475278236711</u0>
+      <v0>242.33612235655369</v0>
+      <!--Undistorted to distorted distortion parameter-->
+      <kud>0.051528574869707723</kud>
+      <!--Distorted to undistorted distortion parameter-->
+      <kdu>-0.05095673130631577</kdu>
+    </model>
+  </camera>
+</root>

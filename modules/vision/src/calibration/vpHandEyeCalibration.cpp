@@ -36,8 +36,8 @@
 
 #include <visp3/vision/vpHandEyeCalibration.h>
 
-#define DEBUG_LEVEL1 0
-#define DEBUG_LEVEL2 0
+#define DEBUG_LEVEL1 1
+#define DEBUG_LEVEL2 1
 
 BEGIN_VISP_NAMESPACE
 
@@ -57,6 +57,9 @@ BEGIN_VISP_NAMESPACE
                                                  const std::vector<vpHomogeneousMatrix> &rMe,
                                                  const vpHomogeneousMatrix &eMc, vpHomogeneousMatrix &mean_rMo)
 {
+  for (int i = 0; i < 6; ++i) {
+    std::cout << "rMe:" << rMe[i] << std::endl;
+  }
   unsigned int nbPose = static_cast<unsigned int>(cMo.size());
   std::vector<vpTranslationVector> rTo(nbPose);
   std::vector<vpRotationMatrix> rRo(nbPose);

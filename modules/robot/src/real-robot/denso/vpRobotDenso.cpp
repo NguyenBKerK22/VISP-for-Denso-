@@ -1072,7 +1072,6 @@ void vpRobotDenso6577::setPosition(const vpRobot::vpControlFrameType frame, cons
     // // Try(WaitState_Viper850(ETAT_ATTENTE_VIPER850, 1000));
     // TODO: move the robot to the destination joint position
     sendPosition(destination.data);
-    std::cout << "Move to joint position: " << destination.t() << std::endl;
     break;
   }
   case vpRobot::REFERENCE_FRAME: {
