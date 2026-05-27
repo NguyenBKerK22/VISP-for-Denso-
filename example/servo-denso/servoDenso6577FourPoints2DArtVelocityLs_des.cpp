@@ -91,20 +91,44 @@ using json = nlohmann::json;
 // StereoSGBM Parameters
 // =======================
 
+cv::Mat disparity_visual;
+cv::Mat disp32f;
 int minDisparity = 0;
-int numDisparities = 8; // sẽ nhân 16
-int blockSize = 5;
+int numDisparities = 10; // sẽ nhân 16
+int blockSize = 10;
 
-int uniquenessRatio = 15;
+int uniquenessRatio = 0;
 int speckleWindowSize = 10;
-int speckleRange = 32;
-int disp12MaxDiff = 1;
+int speckleRange = 100;
+int disp12MaxDiff = 25;
 
+int flag = false;
 cv::Ptr<cv::StereoSGBM> stereo;
+std::vector<float> z_vec = { 400, 500, 600,
+    700, 800, 900, 1000, 1100
+};
+std::vector<float> coeff_vec;
+float M = 42886.78906;
+int x_old = -1, y_old = -1;
+void mouseClickHandle(int action, int x, int y, int flags, void *userdata)
+{
+  if (action == cv::EVENT_LBUTTONDOWN) {
+    if (x != x_old || y != y_old) {
+      std::cout << "Click at " << x <<" " << y <<std::endl;
+      x_old = x;
+      y_old = y;
+      cv::Mat *disp = static_cast<cv::Mat *>(userdata);
+      float d = disp->at<float>(y, x);
+      if (d > 0.0f) {
+        std::cout << "Z depth = " << M * 1.0 / d << std::endl;
+      }
+      else {
+        std::cout << "Invalid disparity" << std::endl;
+      }
+    }
+  }
+}
 
-// =======================
-// Trackbar Callbacks
-// =======================
 
 static void on_numDisparities(int, void *)
 {
@@ -118,7 +142,6 @@ static void on_numDisparities(int, void *)
   std::cout << "numDisparities = "
     << actual_numDisparities << std::endl;
 }
-
 static void on_blockSize(int, void *)
 {
   int actual_blockSize = blockSize;
@@ -140,7 +163,6 @@ static void on_blockSize(int, void *)
   std::cout << "blockSize = "
     << actual_blockSize << std::endl;
 }
-
 static void on_minDisparity(int, void *)
 {
   stereo->setMinDisparity(minDisparity);
@@ -148,29 +170,24 @@ static void on_minDisparity(int, void *)
   std::cout << "minDisparity = "
     << minDisparity << std::endl;
 }
-
 static void on_uniquenessRatio(int, void *)
 {
   stereo->setUniquenessRatio(uniquenessRatio);
 }
-
 static void on_speckleWindowSize(int, void *)
 {
   stereo->setSpeckleWindowSize(
       speckleWindowSize > 0 ?
       speckleWindowSize * 10 : 0);
 }
-
 static void on_speckleRange(int, void *)
 {
   stereo->setSpeckleRange(speckleRange);
 }
-
 static void on_disp12MaxDiff(int, void *)
 {
   stereo->setDisp12MaxDiff(disp12MaxDiff);
 }
-
 enum ROBOT_STATE
 {
   PREINIT,     // Đưa robot về pose ban đầu
@@ -731,7 +748,8 @@ int main(int argc, char **argv)
   for (int i = 0; i < 3; i++) {
     T_mat.at<double>(i, 0) = T_visp[i] * 10;
   }
-
+  cv::namedWindow("Left Rectified");
+  cv::setMouseCallback("Left Rectified", mouseClickHandle, &disp32f);
   // Initialize variables to store the maps for stereo rectification
   cv::Size imgSize(640, 480);
   cv::Mat R1, R2, P1, P2, Q;
@@ -883,7 +901,6 @@ int main(int argc, char **argv)
 
 
   cv::Mat disp, disparity;
-
   // vpPoseVector e_P_c;
   // if (!opt_eMc_filename.empty()) {
   //   e_P_c.loadYAML(opt_eMc_filename, e_P_c);
@@ -958,6 +975,8 @@ int main(int argc, char **argv)
 //   vpChrono chrono, chrene;
 //   bool left_clicked = false;
 //   bool right_clicked = false;
+// Khởi tạo cấu trúc dữ liệu cho Callback chuột
+
   for (;;) {
     cap.read(frame);
 
@@ -1108,7 +1127,6 @@ int main(int argc, char **argv)
     // Convert to float
     // =======================
 
-    cv::Mat disp32f;
 
     disp16s.convertTo(
         disp32f,
@@ -1122,24 +1140,6 @@ int main(int argc, char **argv)
     cv::Mat validMask =
       disp32f > minDisparity;
 
-  // =======================
-  // Statistics
-  // =======================
-
-    double minVal;
-    double maxVal;
-
-    cv::minMaxLoc(
-        disp32f,
-        &minVal,
-        &maxVal);
-
-    std::cout
-      << "disp min = "
-      << minVal
-      << " max = "
-      << maxVal
-      << std::endl;
 
   // =======================
   // Median filter
@@ -1163,8 +1163,6 @@ int main(int argc, char **argv)
     // =======================
     // Normalize
     // =======================
-
-    cv::Mat disparity_visual;
 
     cv::normalize(
         disp_filtered,
@@ -1201,14 +1199,21 @@ int main(int argc, char **argv)
         "Disparity Gray",
         disparity_visual);
 
-    cv::imshow(
-        "Disparity Color",
-        disparity_color);
+    // if (flag) {
+    //   cv::Mat Z_mat(z_vec.size(), 1, CV_32F, z_vec.data());
+    //   cv::Mat coeff(z_vec.size(), 2, CV_32F, coeff_vec.data());
 
-    // =======================
-    // Exit
-    // =======================
+    //   cv::Mat sol(2, 1, CV_32F);
+    //   cv::solve(coeff, Z_mat, sol, cv::DECOMP_QR);
 
+    //   M = sol.at<float>(0, 0);
+    //   std::cout << "M: " << M << std::endl;
+    //   std::cout << "Z_mat =" << std::endl;
+    //   std::cout << Z_mat << std::endl;
+
+    //   std::cout << "coeff =" << std::endl;
+    //   std::cout << coeff << std::endl;
+    // }
     if (cv::waitKey(1) == 27)
       break;
   // if (state == PREINIT) {
